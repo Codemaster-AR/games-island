@@ -1,1 +1,1350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Shooter Arena - Void Knockout Focus</title>
+    <style>
+        body {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            background-color: #1a1a2e; /* Dark background */
+            font-family: 'Inter', sans-serif;
+            color: #ffffff;
+        }
+        #game-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            border: 4px solid #00ffff; /* Cyan border */
+            border-radius: 12px;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.5);
+            background-color: #0f0f1c;
+            padding: 10px;
+            position: relative; /* Needed for absolute positioned overlays */
+        }
+        canvas {
+            background-color: #243b55; /* Deep blue background, similar to image */
+            display: block;
+            border-radius: 8px;
+        }
+        #hud {
+            width: 800px;
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            font-weight: bold;
+            font-size: 1.2rem;
+        }
+        .health-bar-container {
+            width: 200px;
+            height: 20px;
+            background-color: #333;
+            border: 1px solid #fff;
+            border-radius: 4px;
+            overflow: hidden;
+            display: inline-block;
+            margin-left: 10px;
+        }
+        .health-bar {
+            height: 100%;
+            transition: width 0.3s ease-out;
+            border-radius: 4px;
+        }
+        .player-info, .ai-info {
+            display: flex;
+            align-items: center;
+        }
+        /* Default styles set in JS for dynamic coloring */
+        .player-info .health-bar-container .health-bar { background-color: #00ff88; } 
+        .ai-info .health-bar-container .health-bar { background-color: #ff9900; }
+        
+        /* Menu Overlays */
+        .game-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.9);
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+        }
+        .menu-button, #message-box button {
+            background-color: #ff0077;
+            color: white;
+            border: none;
+            padding: 15px 30px;
+            margin: 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            font-size: 1.2rem;
+            transition: background-color 0.2s, transform 0.1s, box-shadow 0.2s;
+            box-shadow: 0 4px 15px rgba(255, 0, 119, 0.4);
+        }
+        .menu-button:hover, #message-box button:hover {
+            background-color: #cc005f;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(255, 0, 119, 0.6);
+        }
 
+        /* Game Over Box */
+        #message-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0, 0, 0, 0.85);
+            padding: 30px 50px;
+            border-radius: 10px;
+            border: 3px solid #ff0077;
+            text-align: center;
+            box-shadow: 0 0 40px rgba(255, 0, 119, 0.7);
+            z-index: 100;
+            display: none;
+        }
+    </style>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body>
+
+<div id="game-container">
+    <!-- Game Over/Win Message Box -->
+    <div id="message-box">
+        <h2 id="message-text" class="text-3xl font-bold mb-4"></h2>
+        <button onclick="changeScreen('MENU')">Back to Menu</button>
+    </div>
+    
+    <!-- Home Menu Overlay -->
+    <div id="menu-screen" class="game-overlay">
+        <h1 class="text-5xl font-extrabold mb-10 text-cyan-400">AI Shooter Arena</h1>
+        <button class="menu-button bg-cyan-500 hover:bg-cyan-700" onclick="changeScreen('LEVEL_SELECT')">
+            START GAME
+        </button>
+        <p class="mt-5 text-gray-400 text-sm">Use WASD or Arrows to Move/Jump, Shift to Shoot</p>
+    </div>
+
+    <!-- Level Select Overlay -->
+    <div id="level-select-screen" class="game-overlay hidden">
+        <h2 class="text-4xl font-bold mb-8 text-cyan-300">Choose Your Level</h2>
+        
+        <div class="flex flex-col space-y-4">
+            <!-- Level 1: The Arena -->
+            <button class="menu-button" onclick="startGame(LEVEL_CONFIGS.ARENA)">
+                The Arena (Standard Deathmatch)
+            </button>
+            
+            <!-- Level 2: The Void -->
+            <button class="menu-button bg-purple-600 hover:bg-purple-800" onclick="startGame(LEVEL_CONFIGS.VOID)">
+                The Void (Knockout Only!)
+            </button>
+        </div>
+        <button class="menu-button bg-gray-500 hover:bg-gray-700 mt-8 text-sm py-3" onclick="changeScreen('MENU')">
+            Back
+        </button>
+    </div>
+
+    <!-- Game HUD and Canvas -->
+    <div id="hud">
+        <div class="player-info">
+            <span>PLAYER</span>
+            <div class="health-bar-container">
+                <div id="player-health" class="health-bar" style="width: 100%;"></div>
+            </div>
+        </div>
+        <div class="ai-info">
+            <span>AI</span>
+            <div class="health-bar-container">
+                <div id="ai-health" class="health-bar" style="width: 100%;"></div>
+            </div>
+        </div>
+    </div>
+    <canvas id="gameCanvas" width="800" height="500"></canvas>
+</div>
+
+
+<script>
+    // --- Global Level Configuration ---
+    const LEVEL_CONFIGS = {
+        ARENA: { 
+            id: 'ARENA', 
+            name: 'The Arena', 
+            worldWidth: 2400, 
+            floorY: 500 - 30, 
+            knockoutY: null,
+            background: '#243b55',
+            bulletDamageMultiplier: 1.0, // Standard damage
+        },
+        VOID: { 
+            id: 'VOID', 
+            name: 'The Void', 
+            worldWidth: 1600, 
+            floorY: 500 + 200, // Floor is far below to simulate a pit
+            knockoutY: 500 + 50, // Point of no return
+            background: '#09091a',
+            bulletDamageMultiplier: 0.3, // Reduced damage for knockout mode
+        } 
+    };
+    
+    // --- AI Behavior States for Refactoring ---
+    const AI_BEHAVIORS = {
+        ARENA: 'ARENA',
+        VOID: 'VOID'
+    };
+
+    document.addEventListener('DOMContentLoaded', () => {
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const GAME_WIDTH = canvas.width;
+        const GAME_HEIGHT = canvas.height;
+        
+        // --- Game States and Level Configuration ---
+        const GAME_STATES = {
+            MENU: 'MENU',
+            LEVEL_SELECT: 'LEVEL_SELECT',
+            GAME: 'GAME'
+        };
+        let currentGameState = GAME_STATES.MENU;
+        let currentLevelConfig = LEVEL_CONFIGS.ARENA;
+        
+        // --- World and Camera Constants ---
+        const GRAVITY = 0.5;
+        const BASE_SPEED = 3.5;
+        const PLAYER_SPEED = BASE_SPEED;
+        const ENEMY_SPEED = BASE_SPEED;
+        const ENEMY_FLEE_SPEED = 6;
+        const JUMP_VELOCITY = -10;
+        const BULLET_SPEED = 8;
+        const BASE_BULLET_DAMAGE = 10;
+        const MAX_HEALTH = 100;
+        const FLEE_THRESHOLD = 30; 
+        const DODGE_DISTANCE = 80;
+        const CAMERA_LAG = 0.05;
+        
+        const KNOCKBACK_FORCE = 5; 
+        const BULLET_ENTITY_KNOCKBACK_FORCE = 2.5;
+        const BULLET_KNOCKBACK_FORCE = 1.2;
+        
+        const BLOCKAGE_DISTANCE = 40;
+        const OVERJUMP_VELOCITY = -14; 
+
+        // AI specific constants
+        const AI_FOLLOW_CHANCE = 0.7; 
+        const MIN_FLEE_DISTANCE = 450; 
+
+        // AI State Machine (Only used in ARENA mode now)
+        const AI_STATES = {
+            ATTACK: 'ATTACK',
+            DODGE: 'DODGE',
+            FLEE: 'FLEE'
+        };
+        
+        // AI Random Movement Constants
+        const AI_MOVE_DURATION_MIN = 40;
+        const AI_MOVE_DURATION_MAX = 150;
+
+        // Global Game State
+        let player;
+        let enemy;
+        let playerBullets = [];
+        let enemyBullets = [];
+        let keys = {};
+        let lastBulletTime = 0;
+        const SHOOT_COOLDOWN = 300; 
+        let aiLastShotTime = 0;
+        const AI_SHOOT_COOLDOWN_ARENA = 1500;
+        const AI_SHOOT_COOLDOWN_VOID = 500; // More aggressive shooting in void
+        let gameRunning = true;
+        
+        let cameraX = 0; 
+        let platforms = [];
+        let grassOffset = 0;
+
+        // --- Screen Management ---
+        function changeScreen(newState) {
+            currentGameState = newState;
+            document.getElementById('menu-screen').classList.add('hidden');
+            document.getElementById('level-select-screen').classList.add('hidden');
+            document.getElementById('message-box').style.display = 'none';
+
+            if (newState === GAME_STATES.MENU) {
+                document.getElementById('menu-screen').classList.remove('hidden');
+            } else if (newState === GAME_STATES.LEVEL_SELECT) {
+                document.getElementById('level-select-screen').classList.remove('hidden');
+            }
+        }
+        window.changeScreen = changeScreen;
+
+        /** Calculates distance between two points (a and b) */
+        function dist(x1, y1, x2, y2) {
+            return Math.sqrt(Math.pow(x2 - x1, 2) + Math.pow(y2 - y1, 2));
+        }
+
+        /** Checks for AABB collision */
+        function checkCollision(objA, objB) {
+            return objA.x < objB.x + objB.width &&
+                   objA.x + objA.width > objB.x &&
+                   objA.y < objB.y + objB.height &&
+                   objA.y + objA.height > objB.y;
+        }
+
+        /** Shows game over or victory message */
+        function showMessage(message, isVictory) {
+            gameRunning = false;
+            document.getElementById('message-text').textContent = message;
+            document.getElementById('message-box').style.display = 'block';
+            
+            const messageBox = document.getElementById('message-box');
+            if (isVictory) {
+                messageBox.style.borderColor = '#00ff88';
+                messageBox.style.boxShadow = '0 0 40px rgba(0, 255, 136, 0.7)';
+            } else {
+                messageBox.style.borderColor = '#ff0077';
+                messageBox.style.boxShadow = '0 0 40px rgba(255, 0, 119, 0.7)';
+            }
+        }
+
+        // --- Platform Generation (The "Trees" and "Cliffs" from the image) ---
+        function generatePlatforms(worldWidth, floorY) {
+            platforms = [];
+            
+            // VOID Mode Platform Generation (Single Central Platform)
+            if (currentLevelConfig.id === LEVEL_CONFIGS.VOID.id) {
+                const platformHeight = 20;
+                const platformY = GAME_HEIGHT - 100; 
+                const platformWidth = worldWidth / 2;
+                platforms.push({
+                    x: (worldWidth / 2) - (platformWidth / 2), 
+                    y: platformY,
+                    width: platformWidth,
+                    height: platformHeight,
+                    color: '#6a0dad', 
+                    isLedge: true
+                });
+                return;
+            }
+
+            // ARENA Mode Platform Generation (Original Logic)
+            let x = 100;
+            const maxLedgeHeight = 150;
+            const minLedgeHeight = 50;
+
+            while (x < worldWidth - 100) {
+                // Large pillar/tree (background visual)
+                platforms.push({
+                    x: x + Math.random() * 50,
+                    y: floorY - (Math.random() * 200 + 100),
+                    width: Math.random() * 10 + 10,
+                    height: 300,
+                    color: `rgb(30, ${Math.floor(80 + Math.random() * 40)}, 60)`, 
+                    isLledge: false
+                });
+
+                // Playable ledge/platform
+                if (Math.random() < 0.5) {
+                    platforms.push({
+                        x: x + 50 + Math.random() * 100,
+                        y: floorY - (Math.random() * (maxLedgeHeight - minLedgeHeight) + minLedgeHeight),
+                        width: Math.random() * 60 + 30,
+                        height: 10,
+                        color: '#4e5a65', 
+                        isLedge: true
+                    });
+                }
+                x += Math.random() * 150 + 50;
+            }
+        }
+        
+        // --- Entity Classes ---
+
+        class Entity {
+            constructor(x, y, width, height, color, health) {
+                this.x = x; 
+                this.y = y; 
+                this.width = width;
+                this.height = height;
+                this.color = color;
+                this.health = health;
+                this.velY = 0;
+                this.velX = 0; 
+                this.isGrounded = false;
+                this.animationTimer = 0;
+                this.muzzleFlashTimer = 0;
+            }
+
+            handlePlatformCollision() {
+                let onPlatform = false;
+                const floorY = currentLevelConfig.floorY; 
+
+                for (const p of platforms) {
+                    if (p.isLedge && checkCollision(this, p)) {
+                        // Collision from above (landing on platform)
+                        if (this.velY >= 0 && this.y + this.height - this.velY <= p.y) {
+                            this.y = p.y - this.height; 
+                            this.velY = 0;
+                            this.isGrounded = true;
+                            onPlatform = true;
+                            break;
+                        } 
+                        // Horizontal collision (for simple pushback)
+                        else if (this.y + this.height > p.y + 5 && p.y + p.height > this.y) {
+                            const overlapX = Math.min(this.x + this.width, p.x + p.width) - Math.max(this.x, p.x);
+                            if (this.x < p.x) {
+                                this.x -= overlapX;
+                                this.velX = Math.max(0, this.velX); 
+                            } else {
+                                this.x += overlapX;
+                                this.velX = Math.min(0, this.velX);
+                            }
+                        }
+                    }
+                }
+                
+                // If not on a platform, check main floor
+                if (!onPlatform) {
+                    if (this.y + this.height >= floorY) {
+                        this.y = floorY - this.height;
+                        this.velY = 0;
+                        this.isGrounded = true;
+                    } else {
+                        this.isGrounded = false;
+                    }
+                } else {
+                    this.isGrounded = true;
+                }
+            }
+
+            applyGravity() {
+                this.x += this.velX;
+                
+                this.velX *= 0.9;
+                if (Math.abs(this.velX) < 0.01) this.velX = 0; 
+
+                if (!this.isGrounded) {
+                    this.velY += GRAVITY;
+                }
+                this.y += this.velY;
+                this.handlePlatformCollision();
+            }
+
+            draw() {
+                const screenX = this.x - cameraX;
+                if (screenX + this.width > 0 && screenX < GAME_WIDTH) {
+                    ctx.fillStyle = this.color;
+                    ctx.fillRect(screenX, this.y, this.width, this.height);
+                }
+            }
+
+            takeDamage(amount) {
+                this.health -= amount;
+                if (this.health < 0) this.health = 0;
+                this.updateHUD();
+            }
+        }
+
+        class Player extends Entity {
+            constructor(startX, startY) {
+                super(startX, startY, 20, 40, '#00ffff', MAX_HEALTH);
+                this.isShooting = false;
+                this.facingRight = true;
+                this.isKnocked = false; 
+            }
+
+            update() {
+                const oldX = this.x; 
+                let moveX = 0;
+                const worldWidth = currentLevelConfig.worldWidth;
+                
+                // 1. Read User Input
+                if (keys['ArrowLeft'] || keys['a']) {
+                    moveX = -PLAYER_SPEED;
+                    this.facingRight = false;
+                } else if (keys['ArrowRight'] || keys['d']) {
+                    moveX = PLAYER_SPEED;
+                    this.facingRight = true;
+                }
+                
+                // 2. Input Override Fix
+                if (moveX !== 0 && Math.abs(this.velX) < 1.0) { 
+                    this.velX = 0;
+                }
+
+                // 3. Apply Player Movement
+                this.x += moveX;
+                
+                // 4. Apply Jump
+                if ((keys['ArrowUp'] || keys['w'] || keys[' ']) && this.isGrounded) {
+                    this.velY = JUMP_VELOCITY;
+                    this.isGrounded = false;
+                }
+                
+                // 5. Apply Gravity and Knockback Decay (via applyGravity)
+                this.applyGravity();
+                
+                // 6. Update Visual Knockback Flag
+                this.isKnocked = Math.abs(this.velX) > 1.5;
+
+                // Muzzle flash timer update
+                this.muzzleFlashTimer = Math.max(0, this.muzzleFlashTimer - 1);
+
+                // Animation Timer update (Running Bob)
+                if (this.isGrounded && Math.abs(this.x - oldX) > 0.1 && !this.isKnocked) {
+                    this.animationTimer++;
+                } else if (this.isGrounded) {
+                    if (this.animationTimer > 0) this.animationTimer -= 2;
+                    if (this.animationTimer < 0) this.animationTimer = 0;
+                }
+
+                // World boundary constraints
+                if (this.x < 0) { 
+                    this.x = 0; 
+                    this.velX = Math.max(0, this.velX);
+                }
+                if (this.x + this.width > worldWidth) {
+                    this.x = worldWidth - this.width;
+                    this.velX = Math.min(0, this.velX);
+                }
+            }
+
+            shoot() {
+                const now = Date.now();
+                if (now - lastBulletTime > SHOOT_COOLDOWN) {
+                    const direction = this.facingRight ? 1 : -1;
+                    
+                    // Use mode-specific damage
+                    const bulletDamage = BASE_BULLET_DAMAGE * currentLevelConfig.bulletDamageMultiplier; 
+                    
+                    const bulletX = this.x + (this.width / 2) + (direction * (this.width / 2)); 
+                    const bulletY = this.y + (this.height / 2);
+                    
+                    // Pass the calculated damage to the bullet constructor
+                    playerBullets.push(new Bullet(bulletX, bulletY, direction * BULLET_SPEED, 0, '#ffffff', false, bulletDamage));
+                    lastBulletTime = now;
+                    this.muzzleFlashTimer = 5; 
+                }
+            }
+
+            updateHUD() {
+                const healthBar = document.getElementById('player-health');
+                healthBar.style.width = `${this.health}%`;
+
+                if (currentLevelConfig.id === LEVEL_CONFIGS.ARENA.id) {
+                    // Arena: Green/Red theme
+                    healthBar.style.backgroundColor = this.health < FLEE_THRESHOLD ? '#ff0000' : '#00ff88';
+                } else {
+                    // Void: Purple/Lighter Purple theme
+                    healthBar.style.backgroundColor = this.health < FLEE_THRESHOLD ? '#cc00cc' : '#a020f0'; 
+                }
+            }
+
+            draw() {
+                const screenX = this.x - cameraX;
+                let yOffset = 0;
+                if (this.isKnocked) {
+                    yOffset = Math.sin(Date.now() / 50) * 3;
+                } else if (this.isGrounded && this.animationTimer > 0) {
+                    yOffset = Math.sin(this.animationTimer * 0.3) * 1.5; 
+                }
+
+                if (screenX + this.width > 0 && screenX < GAME_WIDTH) {
+                    ctx.fillStyle = this.isKnocked && (Math.floor(Date.now() / 100) % 2 === 0) ? '#ff0000' : this.color;
+                    ctx.fillRect(screenX, this.y + yOffset, this.width, this.height);
+                    
+                    const eyeColor = '#1a1a2e';
+                    const eyeSize = 4;
+                    const eyeY = this.y + (this.height / 4) - (eyeSize / 2) + yOffset; 
+
+                    if (this.facingRight) {
+                        const eyeX = screenX + this.width - eyeSize - 1;
+                        ctx.fillStyle = eyeColor;
+                        ctx.fillRect(eyeX, eyeY, eyeSize, eyeSize);
+                    } else {
+                        const eyeX = screenX + 1;
+                        ctx.fillStyle = eyeColor;
+                        ctx.fillRect(eyeX, eyeY, eyeSize, eyeSize);
+                    }
+
+                    if (this.muzzleFlashTimer > 0) {
+                        const flashSize = 8;
+                        const flashColor = 'rgba(255, 255, 100, 0.8)';
+                        let flashX;
+                        
+                        if (this.facingRight) {
+                            flashX = screenX + this.width;
+                        } else {
+                            flashX = screenX - flashSize;
+                        }
+                        
+                        ctx.fillStyle = flashColor;
+                        ctx.fillRect(flashX, this.y + this.height / 2 - flashSize / 2 + yOffset, flashSize, flashSize);
+                    }
+                }
+            }
+        }
+
+        class Enemy extends Entity {
+            constructor(startX, startY, behavior) {
+                super(startX, startY, 20, 40, '#ff9900', MAX_HEALTH);
+                this.behavior = behavior || AI_BEHAVIORS.ARENA;
+                this.state = AI_STATES.ATTACK; // Only used in ARENA
+                this.lastJumpTime = Date.now();
+                this.facingRight = false; 
+                
+                this.aiMoveTimer = 0;
+                this.aiMoveDirection = 0;
+                
+                this.lookBackDuration = 0; // Only used in ARENA
+                this.isKnocked = false;
+            }
+
+            update() {
+                const oldX = this.x; 
+                const worldWidth = currentLevelConfig.worldWidth;
+                
+                // 1. Check if AI should shoot (Covers both behaviors)
+                const shootCooldown = this.behavior === AI_BEHAVIORS.VOID ? AI_SHOOT_COOLDOWN_VOID : AI_SHOOT_COOLDOWN_ARENA;
+                const targetIsRight = player.x > this.x;
+
+                if (Date.now() - aiLastShotTime > shootCooldown) {
+                    // Only allow shooting if currently facing the target
+                    if (this.facingRight === targetIsRight) { 
+                        this.aiShoot(player);
+                        aiLastShotTime = Date.now();
+                    }
+                }
+                
+                // 2. Update AI Logic (Behavior Separation)
+                if (Math.abs(this.velX) < 0.1) {
+                    this.isKnocked = false;
+                    
+                    if (this.behavior === AI_BEHAVIORS.VOID) {
+                        this.updateAIVoid();
+                    } else {
+                        this.updateAIArena();
+                    }
+                } else {
+                    this.isKnocked = true;
+                }
+                
+                // 3. Apply Movement
+                let speed = ENEMY_SPEED;
+                if (this.behavior === AI_BEHAVIORS.ARENA && this.state === AI_STATES.FLEE) {
+                    speed = ENEMY_FLEE_SPEED;
+                }
+                
+                if (!this.isKnocked) {
+                    this.x += this.aiMoveDirection * speed; 
+                }
+
+                // 4. Apply Physics
+                this.applyGravity();
+
+                this.muzzleFlashTimer = Math.max(0, this.muzzleFlashTimer - 1);
+
+                if (this.isGrounded && Math.abs(this.x - oldX) > 0.1 && !this.isKnocked) {
+                    this.animationTimer++;
+                } else if (this.isGrounded) {
+                    if (this.animationTimer > 0) this.animationTimer -= 2;
+                    if (this.animationTimer < 0) this.animationTimer = 0;
+                }
+
+                // World boundary constraints
+                if (this.x < 0) { 
+                    this.x = 0; 
+                    this.velX = Math.max(0, this.velX);
+                }
+                if (this.x + this.width > worldWidth) {
+                    this.x = worldWidth - this.width;
+                    this.velX = Math.min(0, this.velX);
+                }
+            }
+            
+            // --- CORE AI LOGIC: VOID KNOCKOUT BEHAVIOR ---
+            updateAIVoid() {
+                const now = Date.now();
+                
+                // VOID PLATFORM BOUNDARIES (World width 1600, Platform width 800, centered)
+                const VOID_PLATFORM_X_MIN = 400; 
+                const VOID_PLATFORM_X_MAX = 1200;
+                const PLATFORM_CENTER_X = (VOID_PLATFORM_X_MIN + VOID_PLATFORM_X_MAX) / 2;
+
+                // Calculate distance and proximity
+                const distanceToPlayer = Math.abs(this.x - player.x);
+                const playerBlockage = distanceToPlayer < BLOCKAGE_DISTANCE && Math.abs(this.y - player.y) < 5; 
+                
+                // --- Priority 0: Player Bump/Blockage Avoidance JUMP ---
+                const tryingToBump = (this.aiMoveDirection === 1 && this.x < player.x) || 
+                                     (this.aiMoveDirection === -1 && this.x > player.x);
+
+                if (playerBlockage && tryingToBump && this.isGrounded && now - this.lastJumpTime > 500) {
+                    this.velY = OVERJUMP_VELOCITY;
+                    this.isGrounded = false;
+                    this.lastJumpTime = now;
+                    this.aiMoveDirection = 0; // Stop horizontal movement during escape jump
+                    return; 
+                }
+                
+                // --- Priority 1: Bullet Dodge Jump ---
+                const incomingBullet = playerBullets.find(bullet => {
+                    const distance = dist(bullet.x, bullet.y, this.x, this.y);
+                    const predictedY = bullet.y; 
+
+                    return distance < DODGE_DISTANCE && 
+                           (predictedY > this.y - 10 && predictedY < this.y + this.height + 10) &&
+                           ((bullet.velX > 0 && this.x > bullet.x) || (bullet.velX < 0 && this.x < bullet.x));
+                });
+                
+                if (incomingBullet) {
+                    this.aiMoveDirection = incomingBullet.velX < 0 ? 1 : -1;
+                    
+                    if (this.isGrounded && now - this.lastJumpTime > 500) {
+                        this.velY = JUMP_VELOCITY * 0.8;
+                        this.lastJumpTime = now;
+                    }
+                } else {
+                    // --- Priority 2: Movement Logic (Position to Knockout) ---
+                    
+                    // Determine target edge and PUSH_DIRECTION
+                    const playerIsLeft = player.x < PLATFORM_CENTER_X;
+                    // -1 to push left (off 400), 1 to push right (off 1200)
+                    const PUSH_DIRECTION = playerIsLeft ? -1 : 1; 
+                    
+                    // AI's optimal positioning: The AI wants to be between the player and the center.
+                    // Target 40 units away from the player, towards the center of the platform.
+                    // This means being on the opposite side of the PUSH_DIRECTION.
+                    const PUSH_POSITION_OFFSET = 40; 
+                    const targetX = player.x - (PUSH_DIRECTION * PUSH_POSITION_OFFSET); 
+                    
+                    let desiredMove = 0;
+                    if (targetX > this.x + 5) {
+                        desiredMove = 1;
+                    } else if (targetX < this.x - 5) {
+                        desiredMove = -1;
+                    }
+
+                    // Set facing direction based on the ultimate push direction
+                    this.facingRight = PUSH_DIRECTION === 1;
+
+                    // Boundary Check: Ensure AI stops before getting too close to the edge
+                    const edgePadding = 70;
+                    const xEdgeLeft = VOID_PLATFORM_X_MIN + edgePadding;
+                    const xEdgeRight = VOID_PLATFORM_X_MAX - edgePadding - this.width;
+
+                    if (this.x < xEdgeLeft && desiredMove < 0) {
+                        desiredMove = 0; // Stop moving left
+                    }
+                    if (this.x > xEdgeRight && desiredMove > 0) {
+                        desiredMove = 0; // Stop moving right
+                    }
+
+                    // State 1: Move to Favorable Position
+                    if (distanceToPlayer > 100 || Math.abs(this.x - targetX) > 20) {
+                        this.aiMoveDirection = desiredMove;
+                    } else {
+                        // State 2: Player is close and AI is in position (push aggressively)
+                        
+                        this.aiMoveDirection = PUSH_DIRECTION;
+                        
+                        // Introduce brief stops to make movement less robotic
+                        this.aiMoveTimer--;
+                        if (this.aiMoveTimer <= 0) {
+                             this.aiMoveTimer = Math.floor(Math.random() * 80) + 40;
+                             if (Math.random() < 0.2) {
+                                 this.aiMoveDirection = 0; // Stop briefly
+                             }
+                        }
+                    }
+                    
+                    // Make small defensive jumps when standing still too long
+                    if (this.isGrounded && this.aiMoveDirection === 0 && Math.random() < 0.003 && now - this.lastJumpTime > 1500) {
+                        this.velY = JUMP_VELOCITY * 0.7;
+                        this.lastJumpTime = now;
+                    }
+                }
+                
+                // Shooting handled in Enemy.update()
+            }
+
+
+            // --- CORE AI LOGIC: ARENA DEATHMATCH BEHAVIOR (Unchanged) ---
+            updateAIArena() {
+                const now = Date.now();
+                const defaultFacing = this.x < player.x;
+                
+                // --- STRATEGIC JUMP CHECK (Priority 0: Player Bump Avoidance) ---
+                const distanceToPlayer = Math.abs(this.x - player.x);
+                const playerBlockage = distanceToPlayer < BLOCKAGE_DISTANCE && Math.abs(this.y - player.y) < 5; 
+                const tryingToBump = (this.aiMoveDirection === 1 && this.x < player.x) || 
+                                     (this.aiMoveDirection === -1 && this.x > player.x);
+
+                if (playerBlockage && tryingToBump && this.isGrounded && now - this.lastJumpTime > 500) {
+                    this.velY = OVERJUMP_VELOCITY;
+                    this.isGrounded = false;
+                    this.lastJumpTime = now;
+                    return; 
+                }
+                // ------------------------------------------
+
+                // 1. STATE CHECK (Priority 1: Flee/Desperation)
+                const isEnemyLow = this.health < FLEE_THRESHOLD;
+                const isPlayerLow = player.health < FLEE_THRESHOLD;
+                
+                if (isEnemyLow) {
+                    this.state = isPlayerLow ? AI_STATES.ATTACK : AI_STATES.FLEE;
+                } else if (this.health >= FLEE_THRESHOLD && this.state === AI_STATES.FLEE) {
+                    this.state = AI_STATES.ATTACK;
+                }
+
+
+                // 2. STATE CHECK (Priority 2: Dodge)
+                const incomingBullet = playerBullets.find(bullet => {
+                    const distance = dist(bullet.x, bullet.y, this.x, this.y);
+                    const predictedY = bullet.y; 
+
+                    return distance < DODGE_DISTANCE && 
+                           (predictedY > this.y - 10 && predictedY < this.y + this.height + 10) &&
+                           ((bullet.velX > 0 && this.x > bullet.x) || (bullet.velX < 0 && this.x < bullet.x));
+                });
+
+                if (incomingBullet) {
+                    if (this.state === AI_STATES.FLEE) {
+                        // When fleeing, only jump to avoid a bullet, maintain current horizontal flee direction.
+                        if (this.isGrounded && now - this.lastJumpTime > 500) {
+                            this.velY = JUMP_VELOCITY * 0.8;
+                            this.lastJumpTime = now;
+                        }
+                    } else if (this.state !== AI_STATES.DODGE) { 
+                        this.state = AI_STATES.DODGE;
+                        this.aiMoveDirection = incomingBullet.velX < 0 ? 1 : -1;
+                        
+                        if (this.isGrounded && now - this.lastJumpTime > 500) {
+                            this.velY = JUMP_VELOCITY * 0.8;
+                            this.lastJumpTime = now;
+                        }
+                        setTimeout(() => this.state = AI_STATES.ATTACK, 400);
+                    }
+                } else if (this.state === AI_STATES.DODGE) {
+                    return; 
+                }
+
+
+                // 3. EXECUTE STATE BEHAVIOR
+                switch (this.state) {
+                    case AI_STATES.ATTACK:
+                        // --- Random Movement Logic ---
+                        this.aiMoveTimer--;
+
+                        if (this.aiMoveTimer <= 0) {
+                            this.aiMoveTimer = Math.floor(Math.random() * (AI_MOVE_DURATION_MAX - AI_MOVE_DURATION_MIN + 1)) + AI_MOVE_DURATION_MIN;
+
+                            const directionToPlayer = defaultFacing ? 1 : -1;
+                            const directionAwayFromPlayer = -directionToPlayer;
+
+                            const moveChoice = Math.random();
+                            
+                            if (moveChoice < 0.40) {
+                                this.aiMoveDirection = directionToPlayer; 
+                            } else if (moveChoice < 0.70) {
+                                this.aiMoveDirection = 0; 
+                            } else if (moveChoice < 0.90) {
+                                this.aiMoveDirection = directionAwayFromPlayer;
+                            } else {
+                                this.aiMoveDirection = directionAwayFromPlayer; 
+                            }
+                        }
+
+                        // --- Strategic Override: Player too far? ---
+                        const SHOOTING_RANGE_MAX = 500;
+                        const currentDistance = Math.abs(this.x - player.x);
+
+                        if (currentDistance > SHOOTING_RANGE_MAX) {
+                            if (Math.random() < AI_FOLLOW_CHANCE) {
+                                this.aiMoveDirection = defaultFacing ? 1 : -1;
+                            } 
+                        }
+                        
+                        this.facingRight = defaultFacing;
+
+                        break;
+
+                    case AI_STATES.FLEE:
+                        const distanceToPlayerFlee = Math.abs(this.x - player.x);
+                        const directionToRun = this.x > player.x ? 1 : -1; 
+                        const isBlocked = (directionToRun === -1 && this.x <= 5) || 
+                                         (directionToRun === 1 && this.x + this.width >= currentLevelConfig.worldWidth - 5);
+                        
+                        this.aiMoveTimer--;
+
+                        if (distanceToPlayerFlee < MIN_FLEE_DISTANCE) {
+                            if (isBlocked) {
+                                this.aiMoveDirection = 0;
+                            } else if (this.aiMoveTimer <= 0) {
+                                this.aiMoveTimer = Math.floor(Math.random() * 90) + 30; 
+                                
+                                if (Math.random() < 0.85) { 
+                                    this.aiMoveDirection = directionToRun;
+                                } else {
+                                    this.aiMoveDirection = 0;
+                                }
+                            }
+                        } else {
+                            this.aiMoveDirection = 0; 
+                        }
+
+                        const isRunning = this.aiMoveDirection !== 0;
+
+                        if (!isRunning) {
+                            this.facingRight = defaultFacing;
+                        } else {
+                            this.facingRight = directionToRun === 1; 
+                        }
+                        
+                        if (isRunning) {
+                            if (this.lookBackDuration > 0) {
+                                this.lookBackDuration--;
+                                this.facingRight = !this.facingRight;
+                            } else {
+                                if (Math.random() < 0.005) { 
+                                    this.lookBackDuration = 30;
+                                }
+                            }
+                        } else {
+                            this.lookBackDuration = 0;
+                        }
+
+                        if (this.isGrounded && isRunning && Math.random() < 0.05 && now - this.lastJumpTime > 1000) {
+                            this.velY = JUMP_VELOCITY * 0.8;
+                            this.lastJumpTime = now;
+                        }
+                        
+                        break;
+                }
+            }
+
+            aiShoot(target) {
+                const angle = Math.atan2(target.y + target.height/2 - (this.y + this.height/2), target.x + target.width/2 - (this.x + this.width/2));
+                
+                // Check if the AI is facing the target before shooting
+                const targetIsRight = target.x > this.x;
+                if (this.facingRight !== targetIsRight) {
+                    return;
+                }
+                
+                // Use mode-specific damage
+                const bulletDamage = BASE_BULLET_DAMAGE * currentLevelConfig.bulletDamageMultiplier;
+
+                const velX = BULLET_SPEED * Math.cos(angle);
+                const velY = BULLET_SPEED * Math.sin(angle);
+                
+                const bulletColor = this.behavior === AI_BEHAVIORS.VOID ? '#ff0077' : '#ff9900'; // Void uses pink bullets
+                
+                // Pass calculated damage to the Bullet constructor
+                enemyBullets.push(new Bullet(this.x + this.width / 2, this.y + this.height / 2, velX, velY, bulletColor, true, bulletDamage));
+                this.muzzleFlashTimer = 5;
+            }
+
+            updateHUD() {
+                const healthBar = document.getElementById('ai-health');
+                healthBar.style.width = `${this.health}%`;
+
+                if (this.behavior === AI_BEHAVIORS.ARENA) {
+                    if (this.state === AI_STATES.FLEE) {
+                        healthBar.style.backgroundColor = '#ff4500';
+                    } else if (this.state === AI_STATES.DODGE) {
+                        healthBar.style.backgroundColor = '#ffff00';
+                    } else if (this.health < FLEE_THRESHOLD && player.health < FLEE_THRESHOLD) {
+                        healthBar.style.backgroundColor = '#ff0000';
+                    } else {
+                        healthBar.style.backgroundColor = '#ff9900';
+                    }
+                } else {
+                    // Void: Purple/Lighter Purple theme
+                    healthBar.style.backgroundColor = this.health < FLEE_THRESHOLD ? '#cc00cc' : '#a020f0';
+                }
+            }
+            
+            draw() {
+                const screenX = this.x - cameraX;
+                let yOffset = 0;
+                if (this.isKnocked) {
+                    yOffset = Math.sin(Date.now() / 50) * 3;
+                } else if (this.isGrounded && this.animationTimer > 0) {
+                    yOffset = Math.sin(this.animationTimer * 0.3) * 1.5; 
+                }
+
+                if (screenX + this.width > 0 && screenX < GAME_WIDTH) {
+                    ctx.fillStyle = this.isKnocked && (Math.floor(Date.now() / 100) % 2 === 0) ? '#ff0000' : this.color;
+                    ctx.fillRect(screenX, this.y + yOffset, this.width, this.height);
+
+                    const eyeColor = '#1a1a2e';
+                    const eyeSize = 4;
+                    const eyeY = this.y + (this.height / 4) - (eyeSize / 2) + yOffset; 
+
+                    if (this.facingRight) {
+                        const eyeX = screenX + this.width - eyeSize - 1;
+                        ctx.fillStyle = eyeColor;
+                        ctx.fillRect(eyeX, eyeY, eyeSize, eyeSize);
+                    } else {
+                        const eyeX = screenX + 1;
+                        ctx.fillStyle = eyeColor;
+                        ctx.fillRect(eyeX, eyeY, eyeSize, eyeSize);
+                    }
+
+                    if (this.muzzleFlashTimer > 0) {
+                        const flashSize = 8;
+                        const flashColor = this.behavior === AI_BEHAVIORS.VOID ? 'rgba(255, 100, 255, 0.8)' : 'rgba(255, 100, 100, 0.8)';
+                        let flashX;
+                        
+                        if (this.facingRight) {
+                            flashX = screenX + this.width;
+                        } else {
+                            flashX = screenX - flashSize;
+                        }
+                        
+                        ctx.fillStyle = flashColor;
+                        ctx.fillRect(flashX, this.y + this.height / 2 - flashSize / 2 + yOffset, flashSize, flashSize);
+                    }
+                }
+            }
+        }
+
+        class Bullet {
+            // Bullet now accepts a specific damage value
+            constructor(x, y, velX, velY, color = '#ffffff', isEnemy = false, damage = BASE_BULLET_DAMAGE) {
+                this.x = x;
+                this.y = y;
+                this.width = 6;
+                this.height = 6;
+                this.velX = velX; 
+                this.velY = velY; 
+                this.color = color;
+                this.isEnemy = isEnemy;
+                this.damage = damage; // Use the passed damage value
+            }
+
+            update() {
+                this.x += this.velX; 
+                this.y += this.velY;
+            }
+
+            draw() {
+                const screenX = this.x - cameraX;
+                if (screenX + this.width > 0 && screenX < GAME_WIDTH) {
+                    ctx.fillStyle = this.color;
+                    ctx.beginPath();
+                    ctx.arc(screenX, this.y, this.width / 2, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+
+        // --- Game Initialization ---
+        function startGame(levelConfig) {
+            currentLevelConfig = levelConfig;
+            
+            let startXPlayer;
+            let startXEnemy;
+            let startY;
+            const aiBehavior = levelConfig.id === LEVEL_CONFIGS.VOID.id ? AI_BEHAVIORS.VOID : AI_BEHAVIORS.ARENA;
+
+            if (levelConfig.id === LEVEL_CONFIGS.VOID.id) {
+                const platformY = GAME_HEIGHT - 100; 
+                const platformWidth = levelConfig.worldWidth / 2;
+                
+                startXPlayer = (levelConfig.worldWidth / 2) - (platformWidth / 4); 
+                startXEnemy = (levelConfig.worldWidth / 2) + (platformWidth / 4); 
+                startY = platformY - 40; 
+            } else {
+                startXPlayer = currentLevelConfig.worldWidth > GAME_WIDTH ? 100 : GAME_WIDTH / 4;
+                startXEnemy = currentLevelConfig.worldWidth - (currentLevelConfig.worldWidth > GAME_WIDTH ? 100 : GAME_WIDTH / 4);
+                startY = GAME_HEIGHT - 30 - 40; 
+            }
+
+            player = new Player(startXPlayer, startY);
+            enemy = new Enemy(startXEnemy, startY, aiBehavior); // Pass the behavior type
+            
+            playerBullets = [];
+            enemyBullets = [];
+            keys = {};
+            gameRunning = true;
+            cameraX = 0;
+            
+            generatePlatforms(levelConfig.worldWidth, levelConfig.floorY);
+
+            player.updateHUD();
+            enemy.updateHUD();
+
+            changeScreen(GAME_STATES.GAME);
+        }
+        window.startGame = startGame;
+
+        function updateCamera() {
+            if (!player) return;
+            const targetX = player.x - GAME_WIDTH / 2;
+            
+            cameraX += (targetX - cameraX) * CAMERA_LAG;
+
+            if (cameraX < 0) cameraX = 0;
+            if (cameraX + GAME_WIDTH > currentLevelConfig.worldWidth) cameraX = currentLevelConfig.worldWidth - GAME_WIDTH;
+        }
+
+        // --- Input Handling (Unchanged) ---
+        window.addEventListener('keydown', (e) => {
+            if (currentGameState !== GAME_STATES.GAME) return;
+            keys[e.key] = true;
+            if (e.key === 'Shift') {
+                player.shoot();
+            }
+            if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' ', 'w', 'a', 's', 'd'].includes(e.key)) {
+                 e.preventDefault(); 
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (currentGameState !== GAME_STATES.GAME) return;
+            keys[e.key] = false;
+        });
+
+        // --- Game Loop (Unchanged) ---
+
+        function update() {
+            if (!gameRunning || currentGameState !== GAME_STATES.GAME) return;
+
+            const now = Date.now();
+
+            // 1. Update Entities
+            player.update();
+            enemy.update();
+
+            // 2. Resolve Player-Enemy Collision (Pushback/Bounce & AI Dodge Jump)
+            if (checkCollision(player, enemy)) {
+                const overlapX = Math.min(player.x + player.width, enemy.x + enemy.width) - Math.max(player.x, enemy.x);
+                const overlapY = Math.min(player.y + player.height, enemy.y + enemy.height) - Math.max(player.y, enemy.y);
+                
+                if (overlapX > 0 && overlapY > 0 && overlapY > player.height / 2) {
+                    
+                    // AI Bump Dodge Jump 
+                    if (enemy.isGrounded && now - enemy.lastJumpTime > 300) { 
+                        enemy.velY = OVERJUMP_VELOCITY; 
+                        enemy.lastJumpTime = now;
+                        enemy.aiMoveDirection = 0; // Stop horizontal movement during jump
+                    }
+                    
+                    const pushbackAmount = overlapX / 2 + 0.5;
+                    
+                    if (player.x < enemy.x) {
+                        player.x -= pushbackAmount;
+                        enemy.x += pushbackAmount;
+                        
+                        player.velX = -KNOCKBACK_FORCE;
+                        enemy.velX = KNOCKBACK_FORCE;
+                    } else {
+                        player.x += pushbackAmount;
+                        enemy.x -= pushbackAmount;
+
+                        player.velX = KNOCKBACK_FORCE;
+                        enemy.velX = -KNOCKBACK_FORCE;
+                    }
+                }
+            }
+
+            // 3. Update Bullets
+            playerBullets.forEach(bullet => bullet.update());
+            enemyBullets.forEach(bullet => bullet.update());
+            
+            // 4. Update Camera
+            updateCamera();
+
+            // 5. Collision Detection & Filtering
+            let remainingPlayerBullets = [];
+            let remainingEnemyBullets = [];
+            let playerHit = false;
+            let enemyHit = false;
+            
+            // Step 5a: Player Bullet vs Enemy & Bullet vs Bullet
+            playerBullets.forEach(pBullet => {
+                let hitTarget = false;
+                
+                // 1. Check against Enemy
+                if (checkCollision(pBullet, enemy)) {
+                    const knockDirection = pBullet.x < enemy.x ? 1 : -1;
+                    enemy.velX = BULLET_ENTITY_KNOCKBACK_FORCE * knockDirection;
+                    
+                    // Use bullet's damage property
+                    enemy.takeDamage(pBullet.damage); 
+                    hitTarget = true;
+                    enemyHit = true;
+                }
+                
+                // 2. Check against Enemy Bullets (Clash)
+                enemyBullets = enemyBullets.filter(eBullet => {
+                    if (checkCollision(pBullet, eBullet)) {
+                        const dx = eBullet.x - pBullet.x;
+                        const dy = eBullet.y - pBullet.y;
+                        const angle = Math.atan2(dy, dx);
+
+                        const impulseX = BULLET_KNOCKBACK_FORCE * Math.cos(angle);
+                        const impulseY = BULLET_KNOCKBACK_FORCE * Math.sin(angle);
+                        
+                        pBullet.velX -= impulseX; 
+                        pBullet.velY -= impulseY;
+                        eBullet.velX += impulseX;
+                        eBullet.velY += impulseY;
+                        
+                        hitTarget = false; 
+                        return true;
+                    }
+                    return true;
+                });
+
+                // Keep player bullet if it didn't hit an entity and is in bounds
+                if (!hitTarget && pBullet.x > -10 && pBullet.x < currentLevelConfig.worldWidth + 10 && pBullet.y > -10 && pBullet.y < GAME_HEIGHT + 10) {
+                    remainingPlayerBullets.push(pBullet);
+                }
+            });
+            
+            playerBullets = remainingPlayerBullets;
+
+            // Step 5b: Check remaining Enemy Bullets vs Player
+            enemyBullets.forEach(eBullet => {
+                if (checkCollision(eBullet, player)) {
+                    const knockDirection = eBullet.x < player.x ? 1 : -1;
+                    player.velX = BULLET_ENTITY_KNOCKBACK_FORCE * knockDirection; 
+                    
+                    // Use bullet's damage property
+                    player.takeDamage(eBullet.damage); 
+                    playerHit = true;
+                } else if (eBullet.x > -10 && eBullet.x < currentLevelConfig.worldWidth + 10 && eBullet.y > -10 && eBullet.y < GAME_HEIGHT + 10) {
+                    remainingEnemyBullets.push(eBullet);
+                }
+            });
+
+            // Filter out bullets that hit the player
+            enemyBullets = remainingEnemyBullets.filter(b => !playerHit || !checkCollision(b, player));
+            
+            // 6. Update Grass Animation
+            grassOffset = (grassOffset + 0.5) % 800;
+
+
+            // 7. Check Game Over Conditions and Void Knockout
+            
+            // Health Depletion Check (Applies to all modes now that Void has low damage health)
+            if (player.health <= 0) {
+                showMessage("DEFEAT! The AI proved too clever.", false);
+                return;
+            } else if (enemy.health <= 0) {
+                showMessage("VICTORY! The AI has been defeated.", true);
+                return;
+            }
+            
+            // Knockout Check (Specific to levels with knockoutY defined)
+            const knockoutY = currentLevelConfig.knockoutY;
+            if (knockoutY !== null) {
+                if (player.y > knockoutY) {
+                    showMessage("KNOCKOUT DEFEAT! You fell into the abyss.", false);
+                    return;
+                }
+                if (enemy.y > knockoutY) {
+                    showMessage("KNOCKOUT VICTORY! The AI was pushed into the void.", true);
+                    return;
+                }
+            }
+        }
+        
+        /** Draws a blade of grass with interaction logic */
+        function drawGrass(screenX, height, color) {
+            const worldX = cameraX + screenX;
+            ctx.fillStyle = color;
+            
+            let sway = Math.sin((worldX / 10 + grassOffset) * 0.05) * 1.5;
+            
+            const entities = [player, enemy].filter(e => e); 
+            
+            for (const entity of entities) {
+                const entityCenterX = entity.x + entity.width / 2;
+                const grassDistX = Math.abs(worldX - entityCenterX);
+
+                if (grassDistX < 20 && entity.isGrounded && entity.animationTimer > 0) {
+                    const pushFactor = 1 - (grassDistX / 20); 
+                    const pushDirection = worldX < entityCenterX ? -1 : 1; 
+                    
+                    sway += pushDirection * pushFactor * 4; 
+                    height = Math.max(1, height - (pushFactor * 3));
+                }
+            }
+            
+            // In void mode, skip drawing grass if floor is too low
+            if (currentLevelConfig.id === LEVEL_CONFIGS.VOID.id) return;
+
+            ctx.fillRect(screenX + sway, currentLevelConfig.floorY - height, 2, height);
+        }
+
+
+        function draw() {
+            if (currentGameState !== GAME_STATES.GAME || !player) {
+                ctx.fillStyle = currentLevelConfig ? currentLevelConfig.background : '#243b55';
+                ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+                return;
+            }
+
+            ctx.fillStyle = currentLevelConfig.background;
+            ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+
+            const isVoid = currentLevelConfig.id === LEVEL_CONFIGS.VOID.id;
+
+            // Draw the floor/ground (Only for Arena, Void floor is too low to be drawn)
+            if (!isVoid) {
+                ctx.fillStyle = '#1e8449'; 
+                ctx.fillRect(0, currentLevelConfig.floorY, GAME_WIDTH, GAME_HEIGHT - currentLevelConfig.floorY);
+            }
+            
+            // --- Draw Platforms (Trees/Pillars) ---
+            platforms.forEach(p => {
+                const screenX = p.x - cameraX;
+                if (screenX + p.width > 0 && screenX < GAME_WIDTH) {
+                    ctx.fillStyle = p.color;
+                    ctx.fillRect(screenX, p.y, p.width, p.height);
+                }
+            });
+            
+            // --- Draw Grass Animation (Only for Arena) ---
+            if (!isVoid) {
+                for (let i = 0; i < GAME_WIDTH + 10; i += 10) { 
+                    const worldX = cameraX + i;
+                    const color = worldX % 20 < 10 ? '#38761d' : '#274e13'; 
+                    drawGrass(i, 8 + Math.sin(worldX / 150) * 4, color); 
+                }
+            }
+
+            // Draw entities
+            player.draw();
+            enemy.draw();
+
+            // Draw bullets
+            playerBullets.forEach(bullet => bullet.draw());
+            enemyBullets.forEach(bullet => bullet.draw());
+        }
+
+        function gameLoop() {
+            if (currentGameState === GAME_STATES.GAME) {
+                update();
+            }
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        changeScreen(GAME_STATES.MENU);
+        gameLoop();
+    });
+</script>
+
+</body>
+</html>
