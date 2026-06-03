@@ -1,0 +1,1224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Duel: Kills & Points Economy</title>
+    <!-- Load Tailwind CSS for modern styling of the surrounding UI -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+
+        /* Custom styles for the game elements and retro feel */
+        body {
+            background-color: #1e293b; /* Slate 800 */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            font-family: 'Press Start 2P', cursive;
+        }
+
+        #game-container {
+            position: relative; 
+            border: 8px solid #cbd5e1; /* Slate 300 border */
+            box-shadow: 0 0 40px rgba(0, 255, 255, 0.5); /* Neon glow effect */
+            border-radius: 1rem;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            width: 90vw;
+            max-width: 800px;
+        }
+
+        #gameCanvas {
+            background-color: #0f172a; /* Dark background */
+            display: block;
+        }
+
+        .game-ui {
+            padding: 1rem;
+            color: #f1f5f9; /* Light text */
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background-color: #0f172a;
+            border-top: 4px solid #475569;
+        }
+        
+        .upgrade-ui {
+            padding: 1rem;
+            color: #f1f5f9;
+            background-color: #0f172a;
+            border-top: 4px solid #475569;
+            text-align: center;
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 0.5rem;
+        }
+        
+        .upgrade-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem;
+            border-right: 1px dashed #475569;
+        }
+
+        .upgrade-group:last-child {
+            border-right: none;
+        }
+
+        @media (max-width: 640px) {
+            .upgrade-ui {
+                grid-template-columns: 1fr;
+            }
+            .upgrade-group {
+                border-right: none;
+                border-bottom: 1px dashed #475569;
+            }
+            .upgrade-group:last-child {
+                border-bottom: none;
+            }
+        }
+
+
+        .upgrade-button {
+            background-color: #f97316; /* Orange 500 */
+            color: #0f172a;
+            padding: 0.5rem 0.75rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            box-shadow: 0 4px #ea580c;
+            transition: all 0.1s;
+            font-size: 0.5rem;
+            font-family: 'Press Start 2P', cursive;
+            text-align: center;
+            line-height: 1;
+        }
+        
+        .upgrade-button:hover:not(:disabled) {
+            background-color: #f59e0b;
+            box-shadow: 0 2px #b45309;
+            transform: translateY(2px);
+        }
+        .upgrade-button:disabled {
+            background-color: #334155;
+            cursor: not-allowed;
+            box-shadow: none;
+            color: #64748b;
+        }
+        
+        .use-heal-button {
+            background-color: #16a34a;
+            box-shadow: 0 4px #15803d;
+        }
+        .use-heal-button:hover:not(:disabled) {
+            background-color: #10b981;
+            box-shadow: 0 2px #15803d;
+        }
+
+        .message-box {
+            position: absolute;
+            top: 50%; 
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.9);
+            border: 4px solid #fbbf24;
+            color: #fcd34d;
+            padding: 2rem 3rem;
+            border-radius: 0.75rem;
+            text-align: center;
+            box-shadow: 0 0 20px rgba(251, 191, 36, 0.8);
+            z-index: 100;
+            width: 80%;
+            max-width: 400px;
+        }
+
+        .button {
+            background-color: #10b981;
+            color: #0f172a;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            cursor: pointer;
+            box-shadow: 0 4px #047857;
+            transition: all 0.1s;
+            font-family: 'Press Start 2P', cursive;
+        }
+
+        .button:hover {
+            background-color: #059669;
+            box-shadow: 0 2px #047857;
+            transform: translateY(2px);
+        }
+
+        .health-bar-container {
+            width: 100px;
+            height: 10px;
+            background-color: #475569;
+            border-radius: 5px;
+            overflow: hidden;
+            margin-left: 8px;
+            border: 1px solid #94a3b8;
+        }
+
+        .health-bar {
+            height: 100%;
+            background-color: #ef4444;
+            transition: width 0.1s ease-out;
+        }
+        
+        .stat-display {
+            display: flex;
+            align-items: center;
+            margin-right: 1rem;
+            padding: 0.25rem 0.5rem;
+            border-radius: 0.5rem;
+            background-color: #1e293b;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="game-container">
+        <!-- The settings button and modal have been removed -->
+
+        <div class="game-ui">
+            <div class="flex items-center text-xs sm:text-base">
+                <span class="text-red-400 mr-2">HEALTH:</span>
+                <div class="health-bar-container">
+                    <div id="playerHealthBar" class="health-bar" style="width: 100%;"></div>
+                </div>
+            </div>
+            
+            <div class="stat-display">
+                <span class="text-indigo-400 mr-2">TOTAL KILLS:</span>
+                <span id="totalKillsDisplay" class="text-white font-bold">0</span>
+            </div>
+            
+            <div class="flex items-center text-xs sm:text-base">
+                <span class="text-green-400 mr-1">CHARGES:</span>
+                <span id="healingChargesDisplay" class="mx-1 text-green-400 font-bold">0</span>
+                <button id="useHealButton" class="upgrade-button ml-2 use-heal-button" disabled>
+                    USE (Q)
+                </button>
+            </div>
+            
+            <div class="stat-display">
+                <span class="text-yellow-400 mr-2">POINTS:</span>
+                <span id="pointsDisplay" class="text-white font-bold">0</span>
+            </div>
+        </div>
+
+        <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+        <div id="upgradePanel" class="upgrade-ui">
+            <div class="upgrade-group">
+                <span class="text-xs sm:text-sm text-green-400">
+                    HEAL CHARGE | +<span id="healAmountDisplay">35</span> HP
+                </span>
+                <button id="purchaseHealButton" class="upgrade-button use-heal-button">
+                    BUY CHARGE (<span id="healPriceDisplay">2</span> PTS)
+                </button>
+            </div>
+
+            <div class="upgrade-group">
+                <span class="text-xs sm:text-sm">
+                    DMG LVL <span id="damageLevelDisplay">0</span> | HITS <span id="hitsToKillDisplay">5</span>
+                </span>
+                <button id="upgradeDamageButton" class="upgrade-button">
+                    UPGRADE DAMAGE (<span id="damagePriceDisplay">3</span> PTS)
+                </button>
+            </div>
+            
+            <div class="upgrade-group">
+                <span class="text-xs sm:text-sm">
+                    SPD LVL <span id="speedLevelDisplay">0</span> | CD <span id="cooldownDisplay">1.0</span>s
+                </span>
+                <button id="upgradeSpeedButton" class="upgrade-button">
+                    UPGRADE SPEED (<span id="speedPriceDisplay">4</span> PTS)
+                </button>
+            </div>
+            
+            <div class="upgrade-group">
+                <span class="text-xs sm:text-sm">
+                    KB LVL <span id="knockbackLevelDisplay">0</span> | KB <span id="knockbackDisplay">10</span>
+                </span>
+                <button id="upgradeKnockbackButton" class="upgrade-button">
+                    UPGRADE KNOCKBACK (<span id="knockbackPriceDisplay">5</span> PTS)
+                </button>
+            </div>
+        </div>
+
+        <div id="messageOverlay" class="message-box">
+            <h2 class="text-2xl mb-4">AI DUEL</h2>
+            <p class="text-sm mb-4 font-bold text-yellow-400">
+                MOVEMENT (Walk/Run): **Left/Right Arrows**
+            </p>
+            <p class="text-sm mb-4 font-bold text-yellow-400">
+                JUMP: **W**, **Up Arrow** or **SPACE**
+            </p>
+            <p class="text-sm mb-6 font-bold text-yellow-400">
+                FACING/ATTACK DIRECTION: **A & D**
+            </p>
+            <p class="text-sm mb-6">ATTACK with **SHIFT**.</p>
+            
+            <p class="text-sm mb-6 font-bold text-green-400">
+                KILLS grant **POINTS**, used for Upgrades and Healing.
+            </p>
+            <p class="text-sm mb-6 font-bold text-red-400">PASSIVE REGEN: Below 50% health, heal 5 HP after 2.5s without damage.</p>
+            <button id="startButton" class="button">START GAME</button>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const pointsDisplay = document.getElementById('pointsDisplay'); 
+        const totalKillsDisplay = document.getElementById('totalKillsDisplay'); 
+        const playerHealthBar = document.getElementById('playerHealthBar');
+        const messageOverlay = document.getElementById('messageOverlay');
+        const startButton = document.getElementById('startButton');
+        
+        // Upgrade UI elements
+        const upgradeDamageButton = document.getElementById('upgradeDamageButton');
+        const damagePriceDisplay = document.getElementById('damagePriceDisplay');
+        const damageLevelDisplay = document.getElementById('damageLevelDisplay');
+        const hitsToKillDisplay = document.getElementById('hitsToKillDisplay');
+
+        const upgradeSpeedButton = document.getElementById('upgradeSpeedButton');
+        const speedPriceDisplay = document.getElementById('speedPriceDisplay');
+        const speedLevelDisplay = document.getElementById('speedLevelDisplay');
+        const cooldownDisplay = document.getElementById('cooldownDisplay');
+        
+        const upgradeKnockbackButton = document.getElementById('upgradeKnockbackButton');
+        const knockbackPriceDisplay = document.getElementById('knockbackPriceDisplay');
+        const knockbackLevelDisplay = document.getElementById('knockbackLevelDisplay');
+        const knockbackDisplay = document.getElementById('knockbackDisplay');
+        
+        const purchaseHealButton = document.getElementById('purchaseHealButton');
+        const useHealButton = document.getElementById('useHealButton');
+        const healingChargesDisplay = document.getElementById('healingChargesDisplay');
+        const healAmountDisplay = document.getElementById('healAmountDisplay');
+        const healPriceDisplay = document.getElementById('healPriceDisplay');
+
+
+        // --- Attack & Physics Configuration ---
+        const PLAYER_SPEED = 5; 
+        const ENEMY_SPEED = 1.5; 
+        const ATTACK_DURATION = 15;
+        const GRAVITY = 0.5;
+        const JUMP_STRENGTH = 14; 
+        const KILL_WINDOW_MS = 2500; 
+        const WORLD_WIDTH = 1600; 
+        let LETHAL_VOID_Y = 400; 
+        const BUMP_KNOCKBACK_X = 2.5; 
+        const BUMP_KNOCKBACK_Y = -3; 
+
+        // --- Healing Constants ---
+        const PASSIVE_HEAL_COOLDOWN_MS = 2500; 
+        const PASSIVE_HEAL_AMOUNT = 5; 
+        const LOW_HEALTH_THRESHOLD = 0.5; 
+        const HEAL_PURCHASE_PRICE = 2;
+        const HEAL_AMOUNT_INSTANT = 35; 
+        
+        // --- Upgrade Constants ---
+        const ENEMY_MAX_HEALTH = 10;
+        const ATTACK_DAMAGE_MAP = [2, 3, 4]; 
+        // Damage Prices: 3, 6
+        const DAMAGE_UPGRADE_PRICES = [3, 6]; 
+        const INITIAL_ATTACK_COOLDOWN_FRAMES = 60; 
+        const MIN_ATTACK_COOLDOWN_FRAMES = 12; 
+        const SPEED_REDUCTION_PER_LEVEL = 8; 
+        // Speed Prices: 4, 8, 12, 16, 20, 24
+        const SPEED_UPGRADE_PRICES = [4, 8, 12, 16, 20, 24]; 
+        const KNOCKBACK_VALUES = [10, 15, 20, 25]; 
+        // Knockback Prices: 5, 10, 15
+        const KNOCKBACK_UPGRADE_PRICES = [5, 10, 15]; 
+
+
+        // --- Game State (Simplified) ---
+        let game = {
+            // Possible states: 'START', 'PLAYING', 'GAME_OVER'
+            state: 'START', 
+            totalKills: 0, 
+            points: 0,     
+            basePointsPerKill: 1, 
+            lastSpawnTime: 0,
+            enemySpawnRate: 3000, 
+            keys: {},
+            lastAttackFrame: 0, 
+            attackCooldown: 0, 
+            enemies: [], 
+            maxEnemies: 1, 
+            potions: [], 
+            cameraX: 0, 
+            
+            attackDamageLevel: 0,
+            attackSpeedLevel: 0,
+            knockbackLevel: 0,
+            healingCharges: 0, 
+            
+            platforms: [ 
+                { x: 100, y: 280, width: 200, height: 20, color: '#581c87' },
+                { x: 700, y: 320, width: 200, height: 20, color: '#581c87' },
+                { x: 1300, y: 280, width: 200, height: 20, color: '#581c87' },
+                { x: 400, y: 200, width: 150, height: 20, color: '#581c87' },
+                { x: 1050, y: 150, width: 150, height: 20, color: '#581c87' }
+            ]
+        };
+
+
+        // --- Utility Functions for Current Stats ---
+
+        function getCurrentDamage() {
+            return ATTACK_DAMAGE_MAP[game.attackDamageLevel] || ATTACK_DAMAGE_MAP[ATTACK_DAMAGE_MAP.length - 1];
+        }
+
+        function getHitsToKill(damage) {
+            return Math.ceil(ENEMY_MAX_HEALTH / damage);
+        }
+        
+        function getCurrentAttackRecoveryFrames() {
+            let frames = INITIAL_ATTACK_COOLDOWN_FRAMES - game.attackSpeedLevel * SPEED_REDUCTION_PER_LEVEL;
+            return Math.max(MIN_ATTACK_COOLDOWN_FRAMES, frames);
+        }
+
+        function getCurrentCooldownTime() {
+            const frames = getCurrentAttackRecoveryFrames();
+            return (frames / 60).toFixed(1); 
+        }
+        
+        function getCurrentKnockback() {
+            return KNOCKBACK_VALUES[game.knockbackLevel] || KNOCKBACK_VALUES[KNOCKBACK_VALUES.length - 1];
+        }
+        
+        function initializeUIValues() {
+            healAmountDisplay.textContent = HEAL_AMOUNT_INSTANT;
+            healPriceDisplay.textContent = HEAL_PURCHASE_PRICE;
+        }
+
+        // --- Canvas Resizing for Responsiveness ---
+        function resizeCanvas() {
+            const container = document.getElementById('game-container');
+            canvas.width = container.clientWidth;
+            canvas.height = Math.min(canvas.width / 2, 400); 
+            LETHAL_VOID_Y = canvas.height + 50; 
+        }
+        window.addEventListener('resize', resizeCanvas);
+
+
+        // --- Classes (Entity, Player, Enemy, Potion) ---
+        
+        class Entity {
+            constructor(x, y, size, color, maxHealth) {
+                // FIXED: Removed unexpected super() call. Entity is the base class.
+                this.x = x;
+                this.y = y;
+                this.size = size;
+                this.color = color;
+                this.maxHealth = maxHealth;
+                this.health = maxHealth;
+                this.velocityY = 0; 
+                this.isGrounded = false;
+                
+                this.knockbackX = 0; 
+                this.knockbackY = 0; 
+                this.knockbackFriction = 0.85; 
+                this.hitFlasher = 0; 
+            }
+
+            draw() {
+                let drawColor = this.color;
+                if (this.hitFlasher > 0 && Math.floor(this.hitFlasher / 3) % 2 === 0) {
+                    drawColor = '#f1f5f9'; 
+                }
+
+                ctx.fillStyle = drawColor;
+                ctx.fillRect(this.x - game.cameraX, this.y, this.size, this.size);
+                
+                this.hitFlasher = Math.max(0, this.hitFlasher - 1); 
+            }
+
+            applyPhysics() {
+                const prevY = this.y; 
+
+                this.velocityY += GRAVITY;
+                this.y += this.velocityY;
+
+                this.x += this.knockbackX;
+                this.y += this.knockbackY;
+                this.knockbackX *= this.knockbackFriction;
+                this.knockbackY *= this.knockbackFriction;
+                if (Math.abs(this.knockbackX) < 0.1) this.knockbackX = 0;
+                if (Math.abs(this.knockbackY) < 0.1) this.knockbackY = 0;
+
+                this.isGrounded = false;
+
+                if (this.y > LETHAL_VOID_Y) { 
+                    if (this === player) {
+                        gameOver(); 
+                    } else {
+                        const timeSinceHit = performance.now() - this.lastHitByPlayerTime;
+                        const shouldGrantKillCredit = timeSinceHit < KILL_WINDOW_MS; 
+                        killEnemy(this, shouldGrantKillCredit);
+                    }
+                    return; 
+                }
+
+                game.platforms.forEach(platform => {
+                    if (this.velocityY >= 0 && 
+                        this.x < platform.x + platform.width &&
+                        this.x + this.size > platform.x &&
+                        prevY + this.size <= platform.y && 
+                        this.y + this.size >= platform.y) 
+                    {
+                        this.y = platform.y - this.size; 
+                        this.velocityY = 0;
+                        this.isGrounded = true;
+                        this.knockbackY = 0; 
+                    }
+                });
+            }
+            
+            isColliding(other) {
+                return (
+                    this.x < other.x + other.size &&
+                    this.x + this.size > other.x &&
+                    this.y < other.y + other.size &&
+                    this.y + this.size > other.y
+                );
+            }
+        }
+
+        class Player extends Entity {
+            constructor(x, y) {
+                super(x, y, 20, '#38bdf8', 100); 
+                this.y = y; 
+                this.direction = 1; // 1 for right, -1 for left
+                this.lastDamageTime = 0; 
+            }
+
+            move() {
+                let dx = 0;
+
+                if (Math.abs(this.knockbackX) < 1) {
+                    
+                    // --- HORIZONTAL MOVEMENT (Fixed to Arrow Keys) ---
+                    if (game.keys['arrowleft']) { dx -= PLAYER_SPEED; }
+                    if (game.keys['arrowright']) { dx += PLAYER_SPEED; }
+
+                    // --- FACING DIRECTION (Fixed to A/D) ---
+                    if (game.keys['a']) { this.direction = -1; }
+                    if (game.keys['d']) { this.direction = 1; }
+                }
+                
+
+                if ((game.keys['w'] || game.keys['arrowup'] || game.keys[' ']) && this.isGrounded) { 
+                    this.velocityY = -JUMP_STRENGTH;
+                    this.isGrounded = false;
+                    // Consume key press to prevent continuous jumping
+                    game.keys['w'] = false;
+                    game.keys['arrowup'] = false; 
+                    game.keys[' '] = false;
+                }
+
+                this.applyPhysics();
+                this.x = Math.max(0, Math.min(WORLD_WIDTH - this.size, this.x + dx));
+            }
+
+            draw() {
+                super.draw(); 
+
+                const eyeSize = 4;
+                const eyeOffset = 4; 
+                const eyeX = this.x + this.size / 2 + this.direction * eyeOffset - eyeSize / 2 - game.cameraX;
+                const eyeY = this.y + this.size / 4; 
+                
+                ctx.fillStyle = '#0f172a'; 
+                ctx.fillRect(eyeX, eyeY, eyeSize, eyeSize);
+            }
+
+            updateHealthBar() {
+                const percentage = (this.health / this.maxHealth) * 100;
+                playerHealthBar.style.width = `${percentage}%`;
+                playerHealthBar.style.backgroundColor = percentage > 25 ? '#10b981' : '#ef4444'; 
+            }
+
+            takeDamage(amount, sourceX) {
+                this.health -= amount;
+
+                this.lastDamageTime = performance.now(); 
+
+                const direction = this.x < sourceX ? -1 : 1;
+                this.knockbackX = direction * 5; 
+                this.knockbackY = -5; 
+                this.hitFlasher = 15; 
+
+                if (this.health <= 0) {
+                    this.health = 0;
+                    gameOver();
+                }
+                this.updateHealthBar();
+            }
+        }
+
+        class Enemy extends Entity {
+            constructor() {
+                const size = 30;
+                
+                const platforms = game.platforms;
+                const randomIndex = Math.floor(Math.random() * platforms.length);
+                const platform = platforms[randomIndex];
+                
+                let x = platform.x + Math.random() * (platform.width - size);
+                let y = platform.y - size - 1; 
+
+                super(x, y, size, '#ef4444', ENEMY_MAX_HEALTH); 
+                this.damage = 10;
+                this.attackCooldown = 0;
+                this.hitCooldown = 0; 
+                this.leapCooldown = 0; 
+                this.lastHitByPlayerTime = 0;
+            }
+
+            chase(target) {
+                this.applyPhysics(); 
+                if (!game.enemies.includes(this)) return;
+
+                this.hitCooldown = Math.max(0, this.hitCooldown - 1);
+                this.leapCooldown = Math.max(0, this.leapCooldown - 1);
+
+                if (Math.abs(this.knockbackX) < 1) { 
+                    const distance = target.x - this.x;
+                    const direction = distance > 0 ? 1 : -1;
+                    let dx = direction * ENEMY_SPEED;
+                    
+                    // Leaping attack attempt
+                    if (this.isGrounded && this.leapCooldown === 0) {
+                        if (Math.abs(distance) > 100 || target.y < this.y) {
+                             if (Math.random() < 0.008) { 
+                                this.velocityY = -JUMP_STRENGTH * 0.8; 
+                                this.knockbackX = direction * PLAYER_SPEED * 2; 
+                                this.leapCooldown = 180; 
+                                dx = 0; 
+                            }
+                        }
+                    }
+
+                    // Edge Detection and Platform Jumping
+                    if (this.isGrounded) {
+                        let currentPlatform = null;
+                        for (const platform of game.platforms) {
+                            if (
+                                this.x + this.size > platform.x &&
+                                this.x < platform.x + platform.width &&
+                                Math.abs(this.y + this.size - platform.y) < 1 
+                            ) {
+                                currentPlatform = platform;
+                                break;
+                            }
+                        }
+                        
+                        if (currentPlatform) {
+                            const edgeTolerance = 5; 
+                            let triggerJump = false;
+
+                            if (direction === 1) { 
+                                if (this.x + this.size + ENEMY_SPEED > currentPlatform.x + currentPlatform.width - edgeTolerance) {
+                                    triggerJump = true;
+                                }
+                            } else { 
+                                if (this.x - ENEMY_SPEED < currentPlatform.x + edgeTolerance) {
+                                    triggerJump = true;
+                                }
+                            }
+
+                            if (triggerJump && this.leapCooldown === 0) {
+                                if (Math.abs(distance) > 50) {
+                                    if (Math.random() < 0.98) { 
+                                        this.velocityY = -JUMP_STRENGTH * 2.2; 
+                                        this.knockbackX = direction * PLAYER_SPEED * 6.5; 
+                                        this.leapCooldown = 90; 
+                                        dx = 0; 
+                                    }
+                                }
+                            }
+                        }
+                        
+                        this.x += dx;
+
+                    } else if (this.velocityY >= 0) {
+                        this.x += dx * 0.5; 
+                    }
+                }
+                
+                this.x = Math.max(0, Math.min(WORLD_WIDTH - this.size, this.x));
+
+                this.attackCooldown = Math.max(0, this.attackCooldown - 1);
+
+                if (this.isColliding(target) && this.attackCooldown === 0) {
+                    if (Math.abs(this.y - target.y) < target.size * 2) {
+                        target.takeDamage(this.damage, this.x); 
+                        this.attackCooldown = 60; 
+                    }
+                }
+            }
+
+            takeDamage(amount) {
+                if (this.hitCooldown === 0) {
+                    this.health -= amount;
+                    this.hitCooldown = 15; 
+                    this.hitFlasher = 15; 
+                    
+                    this.lastHitByPlayerTime = performance.now(); 
+
+                    const direction = this.x < player.x ? -1 : 1; 
+                    this.knockbackX = direction * getCurrentKnockback(); 
+                    this.knockbackY = -5; 
+                    
+                    if (this.health <= 0) {
+                        killEnemy(this, true); 
+                    }
+                }
+            }
+            
+            draw() {
+                super.draw(); 
+                if (this.health < this.maxHealth) {
+                    this.drawHealthBar();
+                }
+            }
+
+            drawHealthBar() {
+                const barWidth = this.size;
+                const barHeight = 4;
+                const barX = this.x - game.cameraX; 
+                const barY = this.y - barHeight - 2;
+
+                ctx.fillStyle = '#475569';
+                ctx.fillRect(barX, barY, barWidth, barHeight);
+
+                const currentWidth = (this.health / this.maxHealth) * barWidth;
+                ctx.fillStyle = '#ef4444';
+                ctx.fillRect(barX, barY, currentWidth, barHeight);
+            }
+        }
+
+        class Potion {
+             constructor(x, y) {
+                this.x = x;
+                this.y = y;
+                this.size = 15;
+                this.color = '#dc2626'; 
+                this.velocityY = 0;
+                this.healAmount = 25;
+                this.isFallen = false; 
+            }
+
+            applyPhysics() {
+                const prevY = this.y; 
+                
+                this.velocityY += GRAVITY;
+                this.y += this.velocityY;
+
+                if (this.y > LETHAL_VOID_Y) {
+                    this.isFallen = true;
+                    return; 
+                }
+                
+                game.platforms.forEach(platform => {
+                    if (this.velocityY >= 0 && 
+                        this.x < platform.x + platform.width &&
+                        this.x + this.size > platform.x &&
+                        prevY + this.size <= platform.y && 
+                        this.y + this.size > platform.y) 
+                    {
+                        this.y = platform.y - this.size; 
+                        this.velocityY = 0;
+                    }
+                });
+            }
+
+            draw() {
+                const drawX = this.x - game.cameraX;
+                const drawY = this.y;
+
+                ctx.fillStyle = this.color;
+                ctx.beginPath();
+                ctx.arc(drawX + this.size / 2, drawY + this.size / 2, this.size / 2, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = '#f1f5f9';
+                ctx.fillRect(drawX + this.size / 2 - 1, drawY + 3, 2, this.size - 6);
+                ctx.fillRect(drawX + 3, drawY + this.size / 2 - 1, this.size - 6, 2);
+            }
+        }
+
+        // --- Game Objects ---
+        let player;
+
+        // --- BUMP LOGIC ---
+        function handleBumpKnockback(e1, e2) {
+            const e1_to_e2_dir = e2.x > e1.x ? 1 : -1;
+
+            e2.knockbackX += e1_to_e2_dir * BUMP_KNOCKBACK_X;
+            e2.knockbackY = BUMP_KNOCKBACK_Y;
+            
+            if (e1 === player) {
+                e2.lastHitByPlayerTime = performance.now(); 
+            }
+
+            e1.knockbackX -= e1_to_e2_dir * BUMP_KNOCKBACK_X;
+            e1.knockbackY = BUMP_KNOCKBACK_Y;
+        }
+
+
+        // --- Attack/Sword Logic ---
+        function isAttacking() {
+            return game.lastAttackFrame > 0;
+        }
+
+        function drawSword() {
+            if (!isAttacking()) return;
+
+            const framesElapsed = ATTACK_DURATION - game.lastAttackFrame;
+            const swingProgress = framesElapsed / ATTACK_DURATION;
+            const swordLength = 50;
+            const swordWidth = 8;
+            const direction = player.direction;
+            
+            const playerScreenX = player.x - game.cameraX;
+
+            ctx.save();
+            
+            ctx.translate(playerScreenX + player.size / 2, player.y + player.size / 2);
+
+            let startRotation = direction === 1 ? 0 : Math.PI; 
+
+            let angle;
+            if (direction === 1) {
+                angle = startRotation - swingProgress * (Math.PI / 2);
+            } else {
+                angle = startRotation + swingProgress * (Math.PI / 2);
+            }
+
+            ctx.rotate(angle); 
+
+            ctx.fillStyle = '#fbbf24'; 
+            ctx.fillRect(0, -swordWidth / 2, swordLength, swordWidth);
+
+            if (game.lastAttackFrame > ATTACK_DURATION / 3) {
+                checkSwordHit();
+            }
+
+            ctx.restore();
+            game.lastAttackFrame--;
+        }
+
+        function checkSwordHit() {
+            const playerSize = player.size;
+            const swordReach = 50; 
+            const direction = player.direction;
+            const damage = getCurrentDamage();
+
+            let strikeArea = {
+                x: direction === 1 ? player.x + playerSize : player.x - swordReach,
+                y: player.y,
+                width: swordReach, 
+                height: playerSize 
+            };
+            
+            game.enemies.forEach(enemy => {
+                 if (
+                    strikeArea.x < enemy.x + enemy.size &&
+                    strikeArea.x + strikeArea.width > enemy.x &&
+                    strikeArea.y < enemy.y + enemy.size &&
+                    strikeArea.y + strikeArea.height > enemy.y
+                ) {
+                    enemy.takeDamage(damage); 
+                }
+            });
+        }
+
+        function killEnemy(enemyToKill, grantCredit) {
+            if (grantCredit) {
+                game.totalKills++;
+                game.points += game.basePointsPerKill;
+                
+                pointsDisplay.textContent = game.points;
+                totalKillsDisplay.textContent = game.totalKills;
+
+                updateUpgradeButtonState();
+                
+                if (Math.random() < 0.5) { 
+                    game.potions.push(new Potion(enemyToKill.x, enemyToKill.y));
+                }
+            }
+
+            game.enemies = game.enemies.filter(e => e !== enemyToKill);
+            game.lastSpawnTime = performance.now(); 
+        }
+
+        // --- Upgrade System Functions ---
+        
+        function updateUpgradeButtonState() {
+            const currentDamage = getCurrentDamage();
+            const currentCooldown = getCurrentCooldownTime();
+            const currentHits = getHitsToKill(currentDamage);
+            const currentKnockback = getCurrentKnockback();
+            
+            healingChargesDisplay.textContent = game.healingCharges;
+            purchaseHealButton.disabled = game.points < HEAL_PURCHASE_PRICE;
+            
+            const canUseHeal = game.healingCharges > 0 && player.health < player.maxHealth;
+            useHealButton.disabled = !canUseHeal;
+            
+            if (canUseHeal) {
+                useHealButton.classList.add('use-heal-button');
+                useHealButton.classList.remove('upgrade-button:disabled');
+            } else {
+                useHealButton.classList.remove('use-heal-button');
+                useHealButton.classList.add('upgrade-button:disabled');
+            }
+            
+            damageLevelDisplay.textContent = game.attackDamageLevel;
+            hitsToKillDisplay.textContent = currentHits;
+
+            const nextDamageLevel = game.attackDamageLevel; 
+            const damagePrice = DAMAGE_UPGRADE_PRICES[nextDamageLevel];
+            
+            if (nextDamageLevel >= ATTACK_DAMAGE_MAP.length - 1) {
+                upgradeDamageButton.textContent = "MAX DAMAGE (3 HITS)";
+                upgradeDamageButton.disabled = true;
+                damagePriceDisplay.textContent = "MAX";
+            } else {
+                damagePriceDisplay.textContent = damagePrice;
+                upgradeDamageButton.textContent = `UPGRADE DAMAGE (${damagePrice} PTS)`;
+                upgradeDamageButton.disabled = game.points < damagePrice;
+            }
+
+            speedLevelDisplay.textContent = game.attackSpeedLevel;
+            cooldownDisplay.textContent = currentCooldown;
+            
+            const nextSpeedLevel = game.attackSpeedLevel;
+            const maxSpeedLevel = SPEED_UPGRADE_PRICES.length;
+            const speedPrice = SPEED_UPGRADE_PRICES[nextSpeedLevel];
+            
+            if (nextSpeedLevel >= maxSpeedLevel) {
+                upgradeSpeedButton.textContent = "MAX SPEED (0.2s)";
+                upgradeSpeedButton.disabled = true;
+                speedPriceDisplay.textContent = "MAX";
+            } else {
+                speedPriceDisplay.textContent = speedPrice;
+                upgradeSpeedButton.textContent = `UPGRADE SPEED (${speedPrice} PTS)`;
+                upgradeSpeedButton.disabled = game.points < speedPrice;
+            }
+            
+            knockbackLevelDisplay.textContent = game.knockbackLevel;
+            knockbackDisplay.textContent = currentKnockback;
+
+            const nextKnockbackLevel = game.knockbackLevel;
+            const maxKnockbackLevel = KNOCKBACK_UPGRADE_PRICES.length;
+            const knockbackPrice = KNOCKBACK_UPGRADE_PRICES[nextKnockbackLevel];
+            
+            if (nextKnockbackLevel >= maxKnockbackLevel) {
+                upgradeKnockbackButton.textContent = "MAX KNOCKBACK (25 KB)";
+                upgradeKnockbackButton.disabled = true;
+                knockbackPriceDisplay.textContent = "MAX";
+            } else {
+                knockbackPriceDisplay.textContent = knockbackPrice;
+                upgradeKnockbackButton.textContent = `UPGRADE KNOCKBACK (${knockbackPrice} PTS)`;
+                upgradeKnockbackButton.disabled = game.points < knockbackPrice;
+            }
+        }
+        
+        function purchaseHealCharge() {
+            if (game.points >= HEAL_PURCHASE_PRICE) {
+                game.points -= HEAL_PURCHASE_PRICE;
+                game.healingCharges++;
+                pointsDisplay.textContent = game.points;
+                updateUpgradeButtonState();
+            }
+        }
+        
+        function useHealCharge() {
+            if (game.healingCharges > 0 && player.health < player.maxHealth) {
+                game.healingCharges--;
+                player.health = Math.min(player.maxHealth, player.health + HEAL_AMOUNT_INSTANT);
+                player.updateHealthBar();
+                player.lastDamageTime = performance.now(); 
+                updateUpgradeButtonState();
+            }
+        }
+
+        function purchaseDamageUpgrade() {
+            const currentLevel = game.attackDamageLevel;
+            const price = DAMAGE_UPGRADE_PRICES[currentLevel];
+            if (currentLevel < ATTACK_DAMAGE_MAP.length - 1 && game.points >= price) {
+                game.points -= price;
+                game.attackDamageLevel++;
+                pointsDisplay.textContent = game.points;
+                updateUpgradeButtonState();
+            }
+        }
+
+        function purchaseSpeedUpgrade() {
+            const currentLevel = game.attackSpeedLevel;
+            const maxLevel = SPEED_UPGRADE_PRICES.length;
+            const price = SPEED_UPGRADE_PRICES[currentLevel];
+            if (currentLevel < maxLevel && game.points >= price) {
+                game.points -= price;
+                game.attackSpeedLevel++;
+                pointsDisplay.textContent = game.points;
+                updateUpgradeButtonState();
+            }
+        }
+        
+        function purchaseKnockbackUpgrade() {
+            const currentLevel = game.knockbackLevel;
+            const maxLevel = KNOCKBACK_UPGRADE_PRICES.length;
+            const price = KNOCKBACK_UPGRADE_PRICES[currentLevel];
+            if (currentLevel < maxLevel && game.points >= price) {
+                game.points -= price;
+                game.knockbackLevel++;
+                pointsDisplay.textContent = game.points;
+                updateUpgradeButtonState();
+            }
+        }
+        
+        purchaseHealButton.onclick = purchaseHealCharge;
+        useHealButton.onclick = useHealCharge;
+        upgradeDamageButton.onclick = purchaseDamageUpgrade;
+        upgradeSpeedButton.onclick = purchaseSpeedUpgrade;
+        upgradeKnockbackButton.onclick = purchaseKnockbackUpgrade;
+
+
+        // --- Game Logic Functions ---
+
+        function getSpawnPoint() {
+            const START_PLATFORM = game.platforms[1]; 
+            const playerSize = player ? player.size : 20; 
+            const START_PLATFORM_Y = START_PLATFORM.y;
+            const START_PLATFORM_X = START_PLATFORM.x + (START_PLATFORM.width / 2) - (playerSize / 2); 
+            return { x: START_PLATFORM_X, y: START_PLATFORM_Y - playerSize - 1 }; 
+        }
+
+        function spawnEnemy() {
+            if (game.enemies.length < game.maxEnemies) {
+                game.enemies.push(new Enemy());
+            }
+        }
+
+        function updateCamera() {
+            let desiredX = player.x - (canvas.width / 2) + (player.size / 2);
+            desiredX = Math.max(0, desiredX);
+            desiredX = Math.min(WORLD_WIDTH - canvas.width, desiredX);
+            game.cameraX += (desiredX - game.cameraX) * 0.1;
+            game.cameraX = Math.max(0, game.cameraX);
+            game.cameraX = Math.min(WORLD_WIDTH - canvas.width, game.cameraX);
+        }
+
+
+        function gameUpdate() {
+            // CRITICAL CHECK: Only run game logic if the state is strictly 'PLAYING'
+            if (game.state !== 'PLAYING') return;
+
+            player.move();
+            updateCamera();
+            updateUpgradeButtonState();
+
+            if (player.health < player.maxHealth * LOW_HEALTH_THRESHOLD && player.health > 0) {
+                const timeSinceDamage = performance.now() - player.lastDamageTime;
+
+                if (timeSinceDamage >= PASSIVE_HEAL_COOLDOWN_MS) {
+                    player.health = Math.min(player.maxHealth, player.health + PASSIVE_HEAL_AMOUNT);
+                    player.updateHealthBar();
+                    player.lastDamageTime = performance.now(); 
+                }
+            }
+
+
+            game.enemies = game.enemies.filter(e => e.health > 0 || e.y < LETHAL_VOID_Y); 
+            game.enemies.forEach(enemy => enemy.chase(player));
+
+            game.enemies.forEach(enemy => {
+                if (player.isColliding(enemy)) {
+                    handleBumpKnockback(player, enemy);
+                }
+            });
+
+            game.potions.forEach(p => p.applyPhysics());
+            
+            game.potions = game.potions.filter(p => {
+                if (p.isFallen) return false;
+
+                if (player.x < p.x + p.size && player.x + player.size > p.x &&
+                    player.y < p.y + p.size && player.y + p.size > p.y) 
+                {
+                    player.health = Math.min(player.maxHealth, player.health + p.healAmount);
+                    player.updateHealthBar();
+                    player.lastDamageTime = performance.now(); 
+                    return false; 
+                }
+                return true; 
+            });
+
+
+            if (game.enemies.length < game.maxEnemies && (performance.now() - game.lastSpawnTime > game.enemySpawnRate)) {
+                spawnEnemy();
+                game.lastSpawnTime = performance.now(); 
+                
+                if (game.totalKills > 0 && game.totalKills % 5 === 0 && game.maxEnemies < 5) {
+                    game.maxEnemies++;
+                }
+                game.enemySpawnRate = Math.max(1000, game.enemySpawnRate - 50);
+            }
+
+            if (game.lastAttackFrame > 0) {
+                game.lastAttackFrame--;
+            }
+            game.attackCooldown = Math.max(0, game.attackCooldown - 1);
+        }
+
+        function gameDraw() {
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            game.platforms.forEach(p => {
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x - game.cameraX, p.y, p.width, p.height);
+                
+                ctx.strokeStyle = '#a78bfa'; 
+                ctx.lineWidth = 2;
+                ctx.strokeRect(p.x - game.cameraX, p.y, p.width, p.height);
+            });
+
+            const VOID_START_Y = canvas.height; 
+            const VOID_HEIGHT = 10; 
+            if (game.cameraX + canvas.width > 0 && game.cameraX < WORLD_WIDTH) {
+                ctx.fillStyle = 'rgba(255, 0, 0, 0.2)'; 
+                ctx.fillRect(0 - game.cameraX, VOID_START_Y, WORLD_WIDTH, VOID_HEIGHT);
+                
+                if (Math.floor(performance.now() / 200) % 2 === 0) {
+                    ctx.fillStyle = '#ef4444'; 
+                    ctx.fillRect(0 - game.cameraX, VOID_START_Y - 4, WORLD_WIDTH, 4);
+                }
+            }
+
+
+            if (game.state === 'PLAYING' || game.state === 'GAME_OVER') {
+                game.potions.forEach(p => p.draw());
+                player.draw();
+                game.enemies.forEach(enemy => enemy.draw());
+                drawSword();
+            }
+        }
+
+        // --- Game State Transitions ---
+
+        function gameLoop() {
+            gameUpdate();
+            gameDraw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        function startGame() {
+            resizeCanvas(); 
+
+            player = new Player(0, 0); 
+            const spawn = getSpawnPoint();
+            player.x = spawn.x;
+            player.y = spawn.y;
+            player.lastDamageTime = performance.now(); 
+            
+            game.state = 'PLAYING';
+            game.totalKills = 0;
+            game.points = 0; 
+            
+            game.attackDamageLevel = 0;
+            game.attackSpeedLevel = 0; 
+            game.knockbackLevel = 0; 
+            game.healingCharges = 0; 
+            
+            game.cameraX = player.x - (canvas.width / 2) + (player.size / 2);
+            game.cameraX = Math.max(0, game.cameraX);
+            game.cameraX = Math.min(WORLD_WIDTH - canvas.width, game.cameraX);
+
+            pointsDisplay.textContent = game.points;
+            totalKillsDisplay.textContent = game.totalKills;
+            player.updateHealthBar();
+            messageOverlay.classList.add('hidden');
+            game.enemies = [];
+            game.potions = [];
+            game.lastSpawnTime = performance.now();
+            game.enemySpawnRate = 3000;
+            game.maxEnemies = 1;
+            game.attackCooldown = 0;
+            
+            initializeUIValues();
+            updateUpgradeButtonState(); 
+        }
+
+        function gameOver() {
+            game.state = 'GAME_OVER';
+
+            const finalKills = game.totalKills;
+            const finalDamage = getCurrentDamage();
+            const finalCooldown = getCurrentCooldownTime();
+            const finalKnockback = getCurrentKnockback();
+            messageOverlay.innerHTML = `
+                <h2 class="text-3xl mb-4 text-red-500">GAME OVER</h2>
+                <p class="text-xl mb-6">You eliminated ${finalKills} AI threats.</p>
+                <p class="text-sm mb-2">Final Damage: ${finalDamage}</p>
+                <p class="text-sm mb-2">Final Cooldown: ${finalCooldown}s</p>
+                <p class="text-sm mb-6">Final Knockback: ${finalKnockback}</p>
+                <button id="restartButton" class="button">PLAY AGAIN</button>
+            `;
+            messageOverlay.classList.remove('hidden');
+            document.getElementById('restartButton').onclick = startGame;
+        }
+
+
+        // --- Event Listeners for Input ---
+
+        document.addEventListener('keydown', (e) => {
+            const key = e.key.toLowerCase();
+            game.keys[key] = true;
+
+            // Attack input (Shift only)
+            if (game.state === 'PLAYING' && key === 'shift') {
+                if (!isAttacking() && game.attackCooldown === 0) {
+                    game.lastAttackFrame = ATTACK_DURATION;
+                    game.attackCooldown = getCurrentAttackRecoveryFrames(); 
+                }
+                e.preventDefault(); 
+            }
+            
+            // Use heal ability
+            if (game.state === 'PLAYING' && key === 'q') {
+                useHealCharge();
+                e.preventDefault();
+            }
+            
+            // Prevent scrolling on key presses
+            if (game.state !== 'GAME_OVER' && (key === ' ' || key === 'w' || key === 'arrowup' || key === 'a' || key === 'd' || key === 'arrowleft' || key === 'arrowright')) {
+                 e.preventDefault(); 
+            }
+        });
+
+        document.addEventListener('keyup', (e) => {
+            game.keys[e.key.toLowerCase()] = false;
+        });
+        
+        // Initial setup calls
+        resizeCanvas();
+        initializeUIValues();
+        
+        startButton.onclick = startGame; 
+        
+        gameLoop();
+    </script>
+</body>
+</html>

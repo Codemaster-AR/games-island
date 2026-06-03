@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sword Combat - Classic vs. Void vs. Hard</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom font for a game feel */
+        @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
+        body {
+            font-family: 'VT323', monospace;
+            background-color: #1a1a2e; /* Dark background */
+        }
+        canvas {
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+            margin: 20px auto;
+            display: block;
+        }
+        .hud-bar {
+            height: 20px;
+            border-radius: 4px;
+            transition: width 0.3s ease-out;
+            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+        }
+        .btn-game {
+            transition: all 0.15s ease-out;
+            box-shadow: 0 4px #000;
+            @apply ring-4 ring-offset-4 ring-offset-[#1a1a2e] ring-opacity-70;
+        }
+        .btn-game:active {
+            box-shadow: 0 0 #000;
+            transform: translateY(4px);
+        }
+
+        /* Specific Void Mode background for visual flair */
+        .void-background {
+            background-image: linear-gradient(to top, #0f0a17, #0d0a1b);
+        }
+    </style>
+</head>
+<body class="p-4 flex flex-col items-center justify-center min-h-screen text-white">
+
+    <h1 class="text-4xl md:text-5xl font-bold mb-4 text-pink-400 tracking-wider">Sword Duel: Combo Smash!</h1>
+
+    <!-- Game Information HUD -->
+    <div class="w-full max-w-2xl bg-gray-900 p-4 rounded-lg shadow-2xl mb-4 border-b-4 border-indigo-500">
+        <div class="flex justify-between items-center text-xl mb-1">
+            <div id="player-name" class="text-green-400">Player (You)</div>
+            <div id="enemy-name" class="text-red-400">Enemy AI</div>
+        </div>
+        <div class="flex justify-between items-center space-x-4 mb-2">
+            <!-- Player Health -->
+            <div class="w-1/2 bg-gray-700 rounded-md p-0.5 border border-green-500">
+                <div id="player-health-bar" class="hud-bar bg-green-500" style="width: 100%;"></div>
+            </div>
+            <!-- Enemy Health -->
+            <div class="w-1/2 bg-gray-700 rounded-md p-0.5 border border-red-500">
+                <div id="enemy-health-bar" class="hud-bar bg-red-500" style="width: 100%;"></div>
+            </div>
+        </div>
+        <div class="flex justify-between text-sm mt-2">
+            <div id="mode-display" class="text-yellow-300 font-bold">Mode: Classic</div>
+            <div id="message-box" class="text-center w-full text-blue-300">A/D Move, W Jump, Space Attack</div>
+        </div>
+    </div>
+
+    <!-- Canvas for the game -->
+    <!-- Removed 'classic-background' class here, handled dynamically in JS -->
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+
+    <!-- Controls and Modals -->
+    <div class="w-full max-w-2xl flex justify-center space-x-4 mt-4">
+        <button id="restart-btn" class="btn-game bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-6 rounded-lg ring-blue-500">
+            Restart Game
+        </button>
+        <button id="mode-toggle-btn" class="btn-game bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-6 rounded-lg ring-purple-500">
+            Toggle Mode (Classic)
+        </button>
+    </div>
+
+    <!-- Game Over/Win Modal -->
+    <div id="game-over-modal" class="fixed inset-0 bg-black bg-opacity-90 hidden items-center justify-center z-50">
+        <div class="bg-gray-800 p-10 rounded-xl shadow-2xl text-center border-4 border-yellow-400">
+            <h2 id="modal-title" class="text-6xl font-extrabold mb-4 text-yellow-400">Game Over!</h2>
+            <p id="modal-message" class="text-2xl mb-6 text-gray-200">The enemy was too strong.</p>
+            <button id="modal-restart-btn" class="btn-game bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-8 rounded-lg ring-green-500">
+                Play Again
+            </button>
+        </div>
+    </div>
+
+    <script>
+        // --- Game Setup and Constants ---
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const GRAVITY_BASE = 0.5;
+        const GROUND_Y = canvas.height - 50;
+        const PLAYER_SIZE = 40;
+        const ENEMY_SIZE = 40;
+        const BASE_HEALTH = 100; // Renamed from MAX_HEALTH to BASE_HEALTH for dynamic scaling
+        const COMBO_CHANCE = 0.35;
+        const KNOCKBACK_DECAY = 0.8; 
+        let GAME_MODE = 'Classic';
+        let isGameOver = false;
+
+        // HUD Elements
+        const playerHealthBar = document.getElementById('player-health-bar');
+        const enemyHealthBar = document.getElementById('enemy-health-bar');
+        const modeDisplay = document.getElementById('mode-display');
+        const messageBox = document.getElementById('message-box');
+        const gameOverModal = document.getElementById('game-over-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalMessage = document.getElementById('modal-message');
+
+        // Particle array for combo sparks
+        let particles = [];
+        const MAX_PARTICLES = 50;
+
+        // --- Utility Functions ---
+
+        /** Creates a burst of combo sparks */
+        function createComboSparks(x, y, color) {
+            const count = 15;
+            for (let i = 0; i < count; i++) {
+                const angle = Math.random() * Math.PI; // Upward spray
+                const speed = Math.random() * 3 + 1;
+                particles.push(new Particle(x, y, Math.cos(angle) * speed, Math.sin(angle) * speed, color));
+            }
+            // Limit particle count to prevent slowdown
+            if (particles.length > MAX_PARTICLES) {
+                particles.splice(0, particles.length - MAX_PARTICLES);
+            }
+        }
+
+        // --- Game Objects ---
+
+        class Particle {
+            constructor(x, y, vx, vy, color = '#FF00FF') {
+                this.x = x;
+                this.y = y;
+                this.vx = vx;
+                this.vy = vy;
+                this.life = 60; // frames
+                this.color = color;
+                this.size = Math.random() * 3 + 1;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+                this.vy += 0.1; // Simple gravity on particles
+                this.life--;
+            }
+
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.size, this.size);
+            }
+        }
+
+        class Character {
+            // Updated constructor to accept maxHealth
+            constructor(x, y, color, size, isPlayer = false, maxHealth = BASE_HEALTH) {
+                this.x = x;
+                this.y = y;
+                this.width = size;
+                this.height = size;
+                this.color = color;
+                this.isPlayer = isPlayer;
+
+                this.maxHealth = maxHealth; // Store maximum health dynamically
+                this.health = maxHealth;
+                this.velocity = { x: 0, y: 0 };
+                this.speed = 4;
+                this.isGrounded = false;
+                this.isAttacking = false;
+                this.attackDuration = 10; // frames
+                this.attackTimer = 0;
+                this.lastAttackTime = 0;
+                this.attackCooldown = 500; // ms
+                this.comboActive = false;
+                this.isFacingRight = !isPlayer; 
+
+                this.knockbackX = 0;
+                this.knockbackDecay = KNOCKBACK_DECAY;
+            }
+
+            get gravity() {
+                // Gravity is higher in Void mode
+                return GAME_MODE === 'Void' ? GRAVITY_BASE * 1.8 : GRAVITY_BASE;
+            }
+
+            get damageMultiplier() {
+                // Enemy damage is boosted in Void mode
+                return GAME_MODE === 'Void' && !this.isPlayer ? 1.5 : 
+                       GAME_MODE === 'Hard' && !this.isPlayer ? 1.1 : 1.0;
+            }
+
+            update(keys) {
+                if (this.health <= 0) return;
+
+                // 1. Apply Knockback (Physics influence)
+                this.x += this.knockbackX;
+                this.knockbackX *= this.knockbackDecay;
+                if (Math.abs(this.knockbackX) < 0.1) this.knockbackX = 0;
+
+                // 2. Apply Gravity
+                this.velocity.y += this.gravity;
+                this.y += this.velocity.y;
+
+                // 3. Ground Check
+                const wasGrounded = this.isGrounded;
+                if (this.y + this.height >= GROUND_Y) {
+                    this.y = GROUND_Y - this.height;
+                    this.velocity.y = 0;
+                    this.isGrounded = true;
+
+                    // Combo Check (only for Player and only on landing)
+                    if (this.isPlayer && !wasGrounded && this.isGrounded) {
+                        this.checkForCombo();
+                    }
+                } else {
+                    this.isGrounded = false;
+                }
+
+                // 4. Player Input & Movement
+                if (this.isPlayer) {
+                    this.velocity.x = 0;
+                    if (keys['a']) {
+                        this.velocity.x = -this.speed;
+                        this.isFacingRight = false;
+                    }
+                    if (keys['d']) {
+                        this.velocity.x = this.speed;
+                        this.isFacingRight = true;
+                    }
+
+                    // Jump logic (Player)
+                    if (keys['w'] && this.isGrounded) {
+                        this.velocity.y = -10;
+                        this.isGrounded = false;
+                        keys['w'] = false;
+                    }
+
+                    // Attack logic (Player)
+                    if (keys[' '] && !this.isAttacking && Date.now() - this.lastAttackTime > this.attackCooldown) {
+                        // If combo is ready, use it, otherwise standard attack
+                        const comboReady = messageBox.textContent.includes("COMBO SMASH READY");
+                        this.startAttack(comboReady ? 25 : 15, comboReady);
+                        keys[' '] = false;
+                    }
+                }
+
+                // 5. Apply Horizontal Velocity
+                this.x += this.velocity.x;
+
+                // 6. Attack Timer
+                if (this.isAttacking) {
+                    this.attackTimer--;
+                    if (this.attackTimer <= 0) {
+                        this.isAttacking = false;
+                        this.comboActive = false;
+                    }
+                }
+
+                // Keep character within canvas boundaries
+                this.x = Math.max(0, Math.min(canvas.width - this.width, this.x));
+            }
+
+            checkForCombo() {
+                if (Math.random() < COMBO_CHANCE) {
+                    messageBox.textContent = "COMBO SMASH READY! (Space to use)";
+                }
+            }
+
+            startAttack(duration, isCombo = false) {
+                this.isAttacking = true;
+                this.attackTimer = duration;
+                this.lastAttackTime = Date.now();
+                this.comboActive = isCombo;
+
+                // Clear combo message after use
+                if (isCombo) {
+                    messageBox.textContent = "PLAYER: VOID COMBO SMASH!";
+                } else if (this.isPlayer) {
+                    messageBox.textContent = "PLAYER: Standard Swing!";
+                }
+            }
+
+            applyKnockback(xForce, yForce) {
+                this.knockbackX = xForce;
+                this.velocity.y = yForce;
+            }
+
+            draw() {
+                // Character Body (Simplified Stylized Look)
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x, this.y, this.width, this.height);
+                
+                // Head (Lighter color for contrast/stylization)
+                ctx.fillStyle = this.isPlayer ? '#79F8CF' : '#FCB6B6';
+                ctx.fillRect(this.x + this.width / 4, this.y - 10, this.width / 2, 10);
+                
+                // Eyes/Direction Indicator
+                ctx.fillStyle = '#000000';
+                const eyeX = this.isFacingRight ? this.x + this.width * 0.7 : this.x + this.width * 0.2;
+                ctx.fillRect(eyeX, this.y + this.height / 4, 3, 3);
+                
+                // Draw Attack
+                if (this.isAttacking) {
+                    if (this.comboActive) {
+                        // COMBO SMASH DOWN EFFECT
+                        const smashW = 80;
+                        const smashH = 70;
+                        const smashX = this.x + this.width / 2 - smashW / 2;
+                        const smashY = this.y + this.height - 5; 
+
+                        // Smash Box
+                        ctx.fillStyle = 'rgba(255, 0, 255, 0.7)';
+                        ctx.fillRect(smashX, smashY, smashW, smashH);
+                        
+                        // Ground Shockwave line (Visual only)
+                        ctx.strokeStyle = 'white';
+                        ctx.lineWidth = 3;
+                        ctx.beginPath();
+                        ctx.moveTo(smashX, smashY + smashH);
+                        ctx.lineTo(smashX + smashW, smashY + smashH);
+                        ctx.stroke();
+
+                    } else {
+                        // STANDARD HORIZONTAL SWORD SWING
+                        const attackRange = 50;
+                        const attackHeight = 5;
+                        const attackX = this.isFacingRight ? this.x + this.width : this.x - attackRange;
+                        const attackY = this.y + this.height / 2 - attackHeight / 2;
+
+                        // Draw the sword/hitbox
+                        ctx.fillStyle = '#FFD700'; // Gold/Yellow
+                        ctx.fillRect(attackX, attackY, attackRange, attackHeight);
+
+                        // Draw Hilt (Visual only)
+                        ctx.fillStyle = '#666';
+                        ctx.fillRect(this.isFacingRight ? this.x + this.width - 5 : this.x, attackY - 5, 10, 15);
+                    }
+                }
+            }
+
+            getAttackHitbox() {
+                if (!this.isAttacking) return null;
+
+                const baseDamage = this.isPlayer ? 10 : 15; // Enemy deals slightly more base damage
+
+                if (this.comboActive) {
+                    // Combo Smash Hitbox (Vertical)
+                    const smashW = 80;
+                    const smashH = 70;
+                    const smashX = this.x + this.width / 2 - smashW / 2;
+                    const smashY = this.y + this.height - 5;
+                    return {
+                        x: smashX,
+                        y: smashY,
+                        width: smashW,
+                        height: smashH,
+                        damage: 25 * this.damageMultiplier,
+                        isCombo: true,
+                    };
+                } else {
+                    // Standard Attack Hitbox (Horizontal)
+                    const attackRange = 50;
+                    const attackHeight = this.height / 2;
+                    const attackX = this.isFacingRight ? this.x + this.width : this.x - attackRange;
+                    return {
+                        x: attackX,
+                        y: this.y + this.height / 4,
+                        width: attackRange,
+                        height: attackHeight,
+                        damage: baseDamage * this.damageMultiplier,
+                        isCombo: false,
+                    };
+                }
+            }
+
+            takeDamage(damage) {
+                this.health -= damage;
+                if (this.health < 0) this.health = 0;
+                this.updateHUD();
+                messageBox.textContent = this.isPlayer ? `OUCH! Player took ${Math.round(damage)} damage.` : `Enemy took ${Math.round(damage)} damage!`;
+            }
+
+            updateHUD() {
+                const bar = this.isPlayer ? playerHealthBar : enemyHealthBar;
+                // Use this.maxHealth for accurate percentage calculation
+                const percentage = (this.health / this.maxHealth) * 100;
+                bar.style.width = `${percentage}%`;
+                bar.style.backgroundColor = percentage > 60 ? '#10B981' : percentage > 30 ? '#F59E0B' : '#EF4444';
+            }
+        }
+
+        class EnemyAI extends Character {
+            // Updated constructor to accept maxHealth
+            constructor(x, y, maxHealth) {
+                super(x, y, '#ff4444', ENEMY_SIZE, false, maxHealth); // Pass maxHealth to super
+                this.target = player;
+                this.aiState = 'IDLE';
+                this.attackRange = 60;
+                this.dodgeDistance = 150;
+                // Faster reaction time in Hard/Void modes
+                this.reactionTime = GAME_MODE === 'Hard' ? 100 : GAME_MODE === 'Void' ? 150 : 300; 
+                this.lastDecisionTime = Date.now();
+            }
+
+            update() {
+                super.update({});
+                this.aiThink();
+            }
+
+            aiThink() {
+                if (this.health <= 0 || this.isAttacking || Date.now() - this.lastDecisionTime < this.reactionTime) {
+                    return;
+                }
+
+                const dx = this.target.x - this.x;
+                const distance = Math.abs(dx);
+                const decisionCooldown = GAME_MODE === 'Hard' ? 100 : GAME_MODE === 'Void' ? 150 : 400; 
+                this.lastDecisionTime = Date.now();
+
+                // Set facing direction
+                this.isFacingRight = dx > 0;
+
+                // 1. Critical Flee/Dodge logic (low health, or if player is initiating an aerial attack/combo)
+                if (this.health < this.maxHealth * 0.3) { // Use maxHealth for reference
+                    this.aiState = 'FLEE';
+                    this.velocity.x = dx > 0 ? -this.speed * 1.5 : this.speed * 1.5; // Flee faster
+                    if (this.isGrounded) this.velocity.y = -7; // Jump away
+                    this.reactionTime = decisionCooldown;
+                    messageBox.textContent = "Enemy: CRITICAL RETREAT!";
+                    return;
+                }
+
+                // 2. Attack logic (close range)
+                if (distance <= this.attackRange && this.isGrounded) {
+                    this.aiState = 'ATTACK';
+                    this.velocity.x = 0;
+                    this.startAttack(20);
+                    this.reactionTime = decisionCooldown;
+                    return;
+                }
+
+                // 3. Jump to Match Height/Dodge air threat
+                const dy = this.target.y - this.y;
+                if (this.isGrounded && dy < -50 && distance < 200) {
+                    // Player is high up and nearby - jump to evade or meet them
+                    this.aiState = 'AIR_DEFENSE';
+                    this.velocity.y = -8;
+                    this.reactionTime = decisionCooldown * 1.5;
+                    this.velocity.x = dx > 0 ? this.speed * 0.5 : -this.speed * 0.5; // Slight forward jump
+                    return;
+                }
+
+                // 4. Chase logic (mid-range)
+                if (distance > this.attackRange && distance < 400) {
+                    this.aiState = 'CHASE';
+                    this.velocity.x = dx > 0 ? this.speed : -this.speed;
+                    this.reactionTime = decisionCooldown;
+                    return;
+                }
+
+                // 5. Idle/Wait (far away)
+                this.aiState = 'IDLE';
+                this.velocity.x = 0;
+                this.reactionTime = decisionCooldown * 2;
+            }
+        }
+
+        // --- Game Logic and State ---
+        let player, enemy;
+        let keys = {};
+        let animationFrameId;
+
+        function initGame() {
+            // Reset state
+            cancelAnimationFrame(animationFrameId);
+            isGameOver = false;
+
+            // Determine health based on mode
+            const playerMaxHealth = BASE_HEALTH;
+            let enemyMaxHealth = BASE_HEALTH;
+            
+            if (GAME_MODE === 'Hard') {
+                enemyMaxHealth = BASE_HEALTH * 5; // 5x Player Health
+            }
+
+            // Initialize characters with their specific max healths
+            player = new Character(100, GROUND_Y - PLAYER_SIZE, '#1e90ff', PLAYER_SIZE, true, playerMaxHealth);
+            enemy = new EnemyAI(canvas.width - 100 - ENEMY_SIZE, GROUND_Y - ENEMY_SIZE, enemyMaxHealth);
+            enemy.target = player;
+            particles = []; // Clear particles
+
+            player.updateHUD(); // Initial health display
+            enemy.updateHUD();
+
+            // Hide modal
+            gameOverModal.classList.add('hidden');
+            gameOverModal.classList.remove('flex');
+
+            messageBox.textContent = `A/D Move, W Jump, Space Attack. ${GAME_MODE} Mode Active!`;
+
+            // Set visual mode
+            toggleMode(GAME_MODE, true);
+
+            gameLoop();
+        }
+
+        function handleInput(event, isDown) {
+            const key = event.key.toLowerCase();
+            // Prevent default actions for game controls
+            if (['a', 'd', 'w', ' '].includes(key)) {
+                event.preventDefault();
+            }
+            keys[key] = isDown;
+        }
+
+        function checkCollision(objA, objB) {
+            return objA.x < objB.x + objB.width &&
+                   objA.x + objA.width > objB.x &&
+                   objA.y < objB.y + objB.height &&
+                   objA.y + objA.height > objB.y;
+        }
+
+        function checkAttacks() {
+            // Knockback is slightly increased in Hard mode for more dramatic feel, 
+            // and significantly increased in Void mode.
+            const knockbackBase = GAME_MODE === 'Void' ? 12 : GAME_MODE === 'Hard' ? 7 : 5;
+            const knockbackY = GAME_MODE === 'Void' ? -7 : GAME_MODE === 'Hard' ? -4 : -3;
+
+            // Player attacks Enemy
+            const playerHitbox = player.getAttackHitbox();
+            if (playerHitbox && checkCollision(playerHitbox, enemy)) {
+                enemy.takeDamage(playerHitbox.damage / 10); // Damage applied over duration
+                const kbDirection = player.isFacingRight ? 1 : -1;
+
+                if (playerHitbox.isCombo) {
+                    // Heavy Smash Knockback + Sparks
+                    enemy.applyKnockback(kbDirection * (knockbackBase * 2.5), knockbackY * 2.5);
+                    createComboSparks(enemy.x + enemy.width / 2, enemy.y + enemy.height, '#FF00FF');
+                } else {
+                    // Standard Knockback
+                    enemy.applyKnockback(kbDirection * knockbackBase, knockbackY);
+                }
+            }
+
+            // Enemy attacks Player
+            const enemyHitbox = enemy.getAttackHitbox();
+            if (enemyHitbox && checkCollision(enemyHitbox, player)) {
+                player.takeDamage(enemyHitbox.damage / 10);
+                const kbDirection = enemy.isFacingRight ? 1 : -1; // Knock player away from enemy
+                player.applyKnockback(kbDirection * (knockbackBase * 1.5), knockbackY * 1.5);
+            }
+        }
+
+        function checkBumpKnockback() {
+            // Apply light knockback when characters bump into each other
+            if (checkCollision(player, enemy)) {
+                const dx = player.x - enemy.x;
+                const absDx = Math.abs(dx);
+
+                if (absDx > 0.1) {
+                    const bumpForce = 2; // Bump force
+                    const playerDir = dx > 0 ? 1 : -1;
+                    const enemyDir = -playerDir;
+
+                    player.applyKnockback(playerDir * bumpForce, -1);
+                    enemy.applyKnockback(enemyDir * bumpForce, -1);
+                }
+            }
+        }
+
+        function checkWinCondition() {
+            if (player.health <= 0) {
+                showGameOver('Defeat!', `You were defeated in ${GAME_MODE} Mode. Try Classic!`);
+                return true;
+            }
+            if (enemy.health <= 0) {
+                showGameOver('VICTORY!', `You have slain the powerful enemy in ${GAME_MODE} Mode!`);
+                return true;
+            }
+            return false;
+        }
+
+        function showGameOver(title, message) {
+            isGameOver = true;
+            cancelAnimationFrame(animationFrameId);
+            modalTitle.textContent = title;
+            modalMessage.textContent = message;
+            gameOverModal.classList.remove('hidden');
+            gameOverModal.classList.add('flex');
+        }
+
+        function getNextMode(currentMode) {
+            switch (currentMode) {
+                case 'Classic':
+                    return 'Void';
+                case 'Void':
+                    return 'Hard';
+                case 'Hard':
+                    return 'Classic';
+                default:
+                    return 'Classic';
+            }
+        }
+
+        function toggleMode(newMode = null, initial = false) {
+            if (!initial) {
+                GAME_MODE = getNextMode(GAME_MODE);
+            } else if (newMode) {
+                GAME_MODE = newMode;
+            }
+
+            const isVoid = GAME_MODE === 'Void';
+            const isHard = GAME_MODE === 'Hard';
+            
+            // UI updates
+            document.getElementById('mode-toggle-btn').textContent = `Toggle Mode (${GAME_MODE})`;
+            modeDisplay.textContent = `Mode: ${GAME_MODE} ${isVoid ? '(Extreme)' : isHard ? '(5x Health)' : '(Standard)'}`;
+
+            // Reset rings
+            document.getElementById('mode-toggle-btn').classList.remove('ring-yellow-500', 'ring-purple-500', 'ring-red-500');
+            canvas.classList.remove('void-background');
+            canvas.style.filter = 'none';
+
+            // Visual effects for modes
+            if (isHard) {
+                canvas.style.filter = 'saturate(1.5) contrast(1.1)'; // High contrast/saturation for 'Hard'
+                canvas.style.backgroundColor = '#4d0000'; // Dark red background for peril
+                document.getElementById('mode-toggle-btn').classList.add('ring-red-500');
+            } else if (isVoid) {
+                canvas.style.filter = 'brightness(0.5) contrast(1.2)';
+                canvas.classList.add('void-background'); // Use CSS class for gradient
+                canvas.style.backgroundColor = ''; 
+                document.getElementById('mode-toggle-btn').classList.add('ring-yellow-500');
+            } else { // Classic
+                canvas.style.backgroundColor = '#333333'; // Default canvas background
+                document.getElementById('mode-toggle-btn').classList.add('ring-purple-500');
+            }
+            
+            // Only restart if not the initial call
+            if (!initial) initGame();
+        }
+
+        function updateParticles() {
+            for (let i = particles.length - 1; i >= 0; i--) {
+                particles[i].update();
+                if (particles[i].life <= 0) {
+                    particles.splice(i, 1);
+                }
+            }
+        }
+
+        function drawParticles() {
+            particles.forEach(p => p.draw());
+        }
+
+        function gameLoop() {
+            if (isGameOver) return;
+
+            // 1. Clear Canvas & Draw Background/Ground (Mode dependent colors)
+            let bgColor = '#333333';
+            let groundColor = '#555555';
+
+            if (GAME_MODE === 'Void') {
+                bgColor = '#0f0a17';
+                groundColor = '#1c1328';
+            } else if (GAME_MODE === 'Hard') {
+                bgColor = '#4d0000';
+                groundColor = '#660000';
+            }
+
+            // Clear canvas context based on mode color
+            ctx.fillStyle = bgColor;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Draw Ground
+            ctx.fillStyle = groundColor;
+            ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
+
+            // 2. Update Game Objects
+            player.update(keys);
+            enemy.update();
+            updateParticles();
+
+            // 3. Handle Combat, Knockback, and Collisions
+            checkAttacks();
+            checkBumpKnockback();
+
+            // 4. Draw Game Objects
+            player.draw();
+            enemy.draw();
+            drawParticles();
+
+            // 5. Check Win Condition
+            if (!checkWinCondition()) {
+                animationFrameId = requestAnimationFrame(gameLoop);
+            }
+        }
+
+        // --- Event Listeners ---
+        window.addEventListener('keydown', (e) => handleInput(e, true));
+        window.addEventListener('keyup', (e) => handleInput(e, false));
+
+        document.getElementById('restart-btn').addEventListener('click', initGame);
+        document.getElementById('modal-restart-btn').addEventListener('click', initGame);
+        document.getElementById('mode-toggle-btn').addEventListener('click', () => toggleMode(null));
+
+        // --- Start the Game ---
+        window.onload = initGame;
+
+    </script>
+</body>
+</html>
